@@ -1,50 +1,46 @@
-# Welcome to your Expo app 👋
+**스노우화이트 관리자 앱**
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**소개**
+효율적인 작업 관리와 사용자 관리를 위한 모바일 애플리케이션입니다. 관리자는 이 앱을 통해 작업을 생성, 조회, 수정하고, 다양한 작업 추적을 유연하게 설정할 수 있습니다. 또한, 관리자 계정을 효율적으로 관리하여 전반적인 업무 흐름을 간소화하는 데 기여합니다.
 
-## Get started
+이 프로젝트는 Expo Go와 React Native를 기반으로 개발되어, iOS 및 Android 환경에서 원활하게 동작합니다.
 
-1. Install dependencies
+**주요 기능**
+작업 관리:
 
-   ```bash
-   npm install
-   ```
+새로운 작업 생성 및 상세 정보 입력 (제목, 설명 등)
 
-2. Start the app
+작업 목록 조회 및 상태 관리
 
-   ```bash
-   npx expo start
-   ```
+작업별 세부 옵션 설정 및 수정 (예: 박 종류, 코팅 방식, 재단 옵션 등)
 
-In the output, you'll find options to open the app in a
+작업 진행 상황 추적 및 업데이트
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+관리자 사용자 관리:
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+관리자 계정 정보 조회 및 수정
 
-## Get a fresh project
+관리자 역할 및 권한 관리 (향후 확장 예정)
 
-When you're ready, run:
+**🛠️ 기술 스택**
+프론트엔드:
+- React Native
+- Expo Go
 
-```bash
-npm run reset-project
-```
+백엔드:
+- Nest.js
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+데이터베이스:
+- Mysql
 
-## Learn more
+**Erd**
+<img width="1726" height="422" alt="image" src="https://github.com/user-attachments/assets/c503efa6-a097-4b17-a445-3ef16765d03e" />
 
-To learn more about developing your project with Expo, look at the following resources:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+**피그마 화면 (Figma Screens)**
+<img width="253" height="532" alt="image" src="https://github.com/user-attachments/assets/08b513e6-7056-441b-bf47-a61c44a8917e" />
+<img width="826" height="534" alt="image" src="https://github.com/user-attachments/assets/36d96846-bba1-4a97-be18-3aa62c2ecb1f" />
+<img width="241" height="818" alt="image" src="https://github.com/user-attachments/assets/62cf037e-e509-4a3a-b40f-5f202a715559" />
 
-## Join the community
 
-Join our community of developers creating universal apps.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
