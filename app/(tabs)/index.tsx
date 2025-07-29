@@ -1,16 +1,17 @@
+import { useJobStore } from "@/stores/jobStore";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
   Modal,
   ScrollView,
   StyleSheet,
-  Text, // ThemedText 대신 기본 Text 사용
+  Text,
   TextInput,
   TouchableOpacity,
-  View, // ThemedView 대신 기본 View 사용
+  View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // 오늘의 인쇄 작업 목업(mockup) 데이터
 const todayJobsData = [
@@ -21,7 +22,8 @@ const todayJobsData = [
     status: "진행중",
     priority: "긴급",
     details: ["인쇄", "톰슨", "귀도리", "코팅"],
-    time: "2025-07-28 13:00",
+    time: "25-07-28 13:00",
+    time2: "25-07-29 13:00",
   },
   {
     id: 2,
@@ -30,17 +32,9 @@ const todayJobsData = [
     status: "완료",
     priority: "보통",
     details: ["인쇄", "귀도리", "코팅"],
-    time: "2025-07-28 12:00",
+    time: "25-07-28 12:00",
+    time2: "25-07-29 12:00",
   },
-];
-
-// 빠른 메뉴 아이템 - 하단 탭 메뉴로 변경
-const bottomTabItems = [
-  { id: "home", title: "홈", icon: "home-outline" },
-  { id: "calendar", title: "캘린더", icon: "calendar-outline" },
-  { id: "document", title: "문서", icon: "document-outline" },
-  { id: "profile", title: "프로필", icon: "person-outline" },
-  { id: "settings", title: "설정", icon: "settings-outline" },
 ];
 
 export default function HomeScreen() {
@@ -48,10 +42,15 @@ export default function HomeScreen() {
   const [newJobTitle, setNewJobTitle] = useState("");
   const [newJobClient, setNewJobClient] = useState("");
   const [todayJobs, setTodayJobs] = useState(todayJobsData);
-  const [selectedTab, setSelectedTab] = useState("전체"); // 상단 탭 선택 상태
+  const [selectedTab, setSelectedTab] = useState("전체");
 
-  // useSafeAreaInsets 훅을 사용하여 안전 영역 크기를 가져옴
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { setSelectedJob } = useJobStore();
+
+  const handleDetailView = (job: any) => {
+    setSelectedJob(job);
+    router.push("/(tabs)/taskDetail");
+  };
 
   const handleAddJob = () => {
     if (!newJobTitle || !newJobClient) {
@@ -66,6 +65,14 @@ export default function HomeScreen() {
       priority: "보통", // 기본 우선순위
       details: [], // 초기에는 세부 사항 없음
       time: new Date().toLocaleString("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }),
+      time2: new Date().toLocaleString("ko-KR", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -101,77 +108,47 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.rootContainer}>
-      {/* --- 상단 앱 바(App Bar) --- */}
-      <View style={[styles.appBar, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.appBarLeft}>
-          <View style={styles.profileImageContainer}>
-            <Ionicons name="person-circle-outline" size={40} color="#fff" />
-          </View>
-          <View>
-            <Text style={styles.profileName}>김태균</Text>
-            <Text style={styles.profileRole}>대리</Text>
-          </View>
-          <Ionicons
-            name="checkmark-circle"
-            size={16}
-            color="#00C853"
-            style={{ marginLeft: 5 }}
-          />
-        </View>
-        <View style={styles.appBarRight}>
-          <TouchableOpacity
-            onPress={() => Alert.alert("알림", "채팅은 준비 중입니다.")}
-          >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={24}
-              color="#fff"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => Alert.alert("알림", "알림은 준비 중입니다.")}
-          >
-            <Ionicons name="notifications-outline" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <ScrollView style={styles.container}>
-        {/* --- 오늘의 작업 섹션 (상단 배너) --- */}
-        <View style={styles.todayTaskBanner}>
-          <View>
-            <Text style={styles.bannerTitle}>오늘의 작업</Text>
-            <Text style={styles.bannerSubtitle}>
-              Today task & presence activity
-            </Text>
-          </View>
-          <Ionicons name="camera-outline" size={60} color="#fff" />{" "}
-          {/* 카메라 아이콘 예시 */}
-        </View>
+        {/* --- 작업 생성하기 버튼 --- */}
+        {/* <TouchableOpacity
+          style={styles.createJobButton}
+          onPress={() => handleMenuPress("new_job")}
+        >
+          <Text style={styles.createJobButtonText}>작업 생성하기</Text>
+        </TouchableOpacity> */}
 
         {/* --- 상단 탭 메뉴 --- */}
-        <View style={styles.topTabContainer}>
-          {["전체", "진행중", "완료"].map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[
-                styles.topTab,
-                selectedTab === tab && styles.topTabSelected,
-              ]}
-              onPress={() => setSelectedTab(tab)}
-            >
-              <Text
+        <View style={styles.tabBarContainer}>
+          <View style={styles.tabBar}>
+            {["전체", "진행중", "완료"].map((tab) => (
+              <TouchableOpacity
+                key={tab}
                 style={[
-                  styles.topTabText,
-                  selectedTab === tab && styles.topTabTextSelected,
+                  styles.tabItem,
+                  selectedTab === tab && styles.tabItemActive,
                 ]}
+                onPress={() => setSelectedTab(tab)}
               >
-                {tab}
-                {tab === "진행중" && <Text style={styles.tabCount}> 2</Text>}
-                {tab === "완료" && <Text style={styles.tabCount}> 2</Text>}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.tabText,
+                    selectedTab === tab && styles.tabTextActive,
+                  ]}
+                >
+                  {tab}
+                </Text>
+                <View
+                  style={[
+                    styles.tabBadge,
+                    selectedTab === tab && styles.tabBadgeActive,
+                  ]}
+                >
+                  <Text style={styles.tabBadgeText}>2</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.tabIndicator} />
         </View>
 
         {/* --- 오늘의 작업 목록 --- */}
@@ -180,22 +157,17 @@ export default function HomeScreen() {
             {filteredJobs.map((job) => (
               <View key={job.id} style={styles.jobCard}>
                 <View style={styles.jobCardHeader}>
-                  <Ionicons name="calendar-outline" size={20} color="#666" />
                   <Text style={styles.jobTitle}>{job.title}</Text>
                   <View style={styles.jobClientContainer}>
-                    <Ionicons
-                      name="document-text-outline"
-                      size={16}
-                      color="#999"
-                    />
+                    <Ionicons name="business-outline" size={16} color="#999" />
                     <Text style={styles.clientText}>{job.client}</Text>
                   </View>
                 </View>
                 <View style={styles.statusAndPriority}>
-                  <Text style={getStatusStyle(job.status)}>{job.status}</Text>
                   <Text style={getPriorityStyle(job.priority)}>
                     {job.priority}
                   </Text>
+                  <Text style={getStatusStyle(job.status)}>{job.status}</Text>
                 </View>
                 <View style={styles.detailsContainer}>
                   {job.details.map((detail, index) => (
@@ -209,41 +181,114 @@ export default function HomeScreen() {
                     </Text>
                   )}
                 </View>
+
+                {/* 타임라인 섹션 */}
+                <View style={styles.timelineContainer}>
+                  <Text style={styles.timelineTitle}>진행 상황</Text>
+                  <View style={styles.timeline}>
+                    <View style={styles.timelineItem}>
+                      <View
+                        style={[styles.timelineDot, styles.timelineDotActive]}
+                      />
+                      <View style={styles.timelineContent}>
+                        <Text style={styles.timelineText}>인쇄</Text>
+                        <Text
+                          style={styles.timelineCompany}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          스노우화이트
+                        </Text>
+                        <Text style={styles.timelineTime}>07-28</Text>
+                      </View>
+                    </View>
+                    <View style={styles.timelineItem}>
+                      <View
+                        style={[styles.timelineDot, styles.timelineDotActive]}
+                      />
+                      <View style={styles.timelineContent}>
+                        <Text style={styles.timelineText}>코팅</Text>
+                        <Text
+                          style={styles.timelineCompany}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          우신코팅
+                        </Text>
+                        <Text
+                          style={styles.timelineTime}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          07-28
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.timelineItem}>
+                      <View
+                        style={[styles.timelineDot, styles.timelineDotActive]}
+                      />
+                      <View style={styles.timelineContent}>
+                        <Text style={styles.timelineText}>금박</Text>
+                        <Text
+                          style={styles.timelineCompany}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          신화사금박
+                        </Text>
+                        <Text
+                          style={styles.timelineTime}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          07-29
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.timelineItem}>
+                      <View style={[styles.timelineDot]} />
+                      <View style={styles.timelineContent}>
+                        <Text style={styles.timelineText}>출고</Text>
+                        <Text
+                          style={styles.timelineCompany}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          CJ대한통운
+                        </Text>
+                        <Text
+                          style={styles.timelineTime}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          07-29
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
                 <View style={styles.jobCardFooter}>
-                  <TouchableOpacity style={styles.detailButton}>
+                  <View>
+                    <Text style={styles.jobTime}>발주일: {job.time}</Text>
+                    <Text style={styles.jobTime}>납품일: {job.time2}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.detailButton}
+                    onPress={() => handleDetailView(job)}
+                  >
                     <Text style={styles.detailButtonText}>상세보기</Text>
                   </TouchableOpacity>
-                  <Text style={styles.jobTime}>{job.time}</Text>
                 </View>
               </View>
             ))}
           </View>
         </View>
 
-        {/* --- 작업 생성하기 버튼 --- */}
-        <TouchableOpacity
-          style={styles.createJobButton}
-          onPress={() => handleMenuPress("new_job")}
-        >
-          <Text style={styles.createJobButtonText}>작업 생성하기</Text>
-        </TouchableOpacity>
+        {/* 탭바 높이만큼 하단 마진 */}
+        <View style={styles.tabBarMargin} />
       </ScrollView>
-
-      {/* --- 하단 탭 바 --- */}
-      <View style={[styles.bottomTabBar, { paddingBottom: insets.bottom }]}>
-        {bottomTabItems.map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={styles.bottomTabItem}
-            onPress={() =>
-              Alert.alert("알림", `${item.title} 메뉴는 준비 중입니다.`)
-            }
-          >
-            <Ionicons name={item.icon as any} size={24} color="#555" />
-            <Text style={styles.bottomTabText}>{item.title}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
 
       {/* --- 새 작업 등록 팝업(Modal) --- */}
       <Modal
@@ -319,62 +364,19 @@ const getPriorityStyle = (priority: any) => {
 const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
-    backgroundColor: "#F0F2F5", // 전체 배경색
-  },
-  appBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    backgroundColor: "#6A5ACD", // 이미지에 가까운 보라색 계열
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  appBarLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  profileImageContainer: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: "#8A2BE2", // 프로필 이미지 배경색
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  profileName: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  profileRole: {
-    color: "#E0E0E0",
-    fontSize: 13,
-  },
-  appBarRight: {
-    flexDirection: "row",
-    gap: 15,
+    backgroundColor: "#F0F2F5",
   },
   container: {
     flex: 1,
   },
   todayTaskBanner: {
-    backgroundColor: "#8A2BE2", // 보라색 계열
+    backgroundColor: "#795FFC", // 보라색 계열
     marginHorizontal: 20,
     marginTop: 20,
     padding: 20,
     borderRadius: 15,
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -386,53 +388,74 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
+    textAlign: "center",
   },
   bannerSubtitle: {
     color: "#E0E0E0",
     fontSize: 14,
     marginTop: 5,
   },
-  topTabContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+  tabBarContainer: {
     backgroundColor: "#fff",
     marginHorizontal: 20,
     marginTop: 20,
     borderRadius: 10,
-    paddingVertical: 5,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 3,
+    overflow: "hidden",
   },
-  topTab: {
+  tabBar: {
+    flexDirection: "row",
+    paddingVertical: 0,
+  },
+  tabItem: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 8,
+    paddingVertical: 16,
+    position: "relative",
   },
-  topTabSelected: {
-    backgroundColor: "#6A5ACD", // 선택된 탭 배경색
+  tabItemActive: {
+    backgroundColor: "#f8f9fa",
+    borderBottomWidth: 3,
+    borderBottomColor: "#007AFF",
   },
-  topTabText: {
+  tabText: {
     fontSize: 15,
+    fontWeight: "500",
+    color: "#666",
+    marginBottom: 4,
+  },
+  tabTextActive: {
+    color: "#007AFF",
     fontWeight: "600",
-    color: "#555",
   },
-  topTabTextSelected: {
-    color: "#fff",
+  tabBadge: {
+    backgroundColor: "#FF5722",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 2,
   },
-  tabCount: {
-    backgroundColor: "#FF5722", // 주황색 카운트 배경
+  tabBadgeActive: {
+    backgroundColor: "#007AFF",
+  },
+  tabBadgeText: {
     color: "#fff",
     fontSize: 10,
     fontWeight: "bold",
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 5,
-    overflow: "hidden", // 텍스트가 넘치지 않도록
+    textAlign: "center",
+  },
+  tabIndicator: {
+    height: 3,
+    width: "33.33%",
+    position: "absolute",
+    bottom: 0,
+    left: 0,
   },
   section: {
     padding: 20,
@@ -475,7 +498,8 @@ const styles = StyleSheet.create({
   },
   statusAndPriority: {
     flexDirection: "row",
-    marginBottom: 10,
+    justifyContent: "space-between",
+    marginBottom: 15,
     gap: 8,
   },
   statusTag: {
@@ -533,9 +557,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
-    paddingTop: 10,
   },
   detailButton: {
     backgroundColor: "#E0E0E0",
@@ -553,7 +574,7 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   createJobButton: {
-    backgroundColor: "#6A5ACD", // 보라색 계열
+    backgroundColor: "#795FFC", // 보라색 계열
     marginHorizontal: 20,
     paddingVertical: 15,
     borderRadius: 15,
@@ -659,5 +680,65 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "bold",
     fontSize: 17,
+  },
+  tabBarMargin: {
+    height: 100, // 탭바 높이 + 안전 영역 고려
+  },
+  timelineContainer: {
+    paddingTop: 10,
+    marginTop: 15,
+    marginBottom: 15,
+  },
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 10,
+  },
+  timeline: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#F0F0F0",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
+    paddingTop: 15,
+  },
+  timelineItem: {
+    alignItems: "center",
+    width: "20%", // 5개씩 배치
+    marginBottom: 15,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#ddd",
+    marginBottom: 6,
+  },
+  timelineDotActive: {
+    backgroundColor: "#007AFF",
+  },
+  timelineContent: {
+    alignItems: "center",
+  },
+  timelineText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#666",
+    marginBottom: 2,
+    textAlign: "center",
+  },
+  timelineCompany: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#999",
+    textAlign: "center",
+  },
+  timelineTime: {
+    fontSize: 10,
+    color: "#999",
+    textAlign: "center",
   },
 });
