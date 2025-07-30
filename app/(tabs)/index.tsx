@@ -1,4 +1,5 @@
-import { useJobStore } from "@/stores/jobStore";
+import { TabBarMargin } from "@/components/global/TabBarMargin";
+import { useTaskStore } from "@/stores/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -45,10 +46,10 @@ export default function HomeScreen() {
   const [selectedTab, setSelectedTab] = useState("전체");
 
   const router = useRouter();
-  const { setSelectedJob } = useJobStore();
+  const { setSelectedTask } = useTaskStore();
 
   const handleDetailView = (job: any) => {
-    setSelectedJob(job);
+    setSelectedTask(job);
     router.push("/(tabs)/taskDetail");
   };
 
@@ -287,7 +288,7 @@ export default function HomeScreen() {
         </View>
 
         {/* 탭바 높이만큼 하단 마진 */}
-        <View style={styles.tabBarMargin} />
+        <TabBarMargin />
       </ScrollView>
 
       {/* --- 새 작업 등록 팝업(Modal) --- */}
