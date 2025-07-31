@@ -123,8 +123,6 @@ export default function LoginScreen() {
                   style={styles.content}
                 >
                   <Text style={styles.title}>로그인</Text>
-                  <Text style={styles.subtitle}>계정에 로그인하세요</Text>
-
                   <View style={styles.inputContainer}>
                     <TextInput
                       style={styles.input}
@@ -234,7 +232,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     alignSelf: "center",
     marginTop: 12,
-    marginBottom: 8,
   },
   content: {
     flex: 1,
@@ -245,9 +242,8 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 8,
     color: "#333",
-    marginTop: 20,
+    marginVertical: 15,
   },
   subtitle: {
     fontSize: 16,
