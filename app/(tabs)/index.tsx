@@ -14,27 +14,155 @@ import {
   View,
 } from "react-native";
 
+// 타입 정의
+interface ProcessItem {
+  process_category: string;
+  process_type: string;
+  process_company: string;
+  process_company_tel: string;
+  process_stauts: string;
+  process_memo: string;
+}
+
+interface TaskDetail {
+  delivery_type: string;
+  task_desc: string;
+  paper_size: string;
+  product_size: string;
+  paper_type: string;
+  process: ProcessItem[];
+}
+
+interface JobData {
+  id: number;
+  task_title: string;
+  task_company: string;
+  task_progressing: string;
+  task_priority: string;
+  task_detail: TaskDetail;
+  task_order_date: string;
+  task_delivery_date: string;
+}
+
 // 오늘의 인쇄 작업 목업(mockup) 데이터
-const todayJobsData = [
+const todayJobsData: JobData[] = [
   {
     id: 1,
-    title: "브로슈어",
-    client: "피앤제이",
-    status: "진행중",
-    priority: "긴급",
-    details: ["인쇄", "톰슨", "귀도리", "코팅"],
-    time: "25-07-28 13:00",
-    time2: "25-07-29 13:00",
+    task_title: "브로슈어",
+    task_company: "피앤제이",
+    task_progressing: "진행중",
+    task_priority: "긴급",
+    task_detail: {
+      delivery_type: "택배 배송",
+      task_desc: "작업 설명",
+      paper_size: "467*315mm",
+      product_size: "105*148mm",
+      paper_type: "스노우250g",
+      process: [
+        {
+          process_category: "인쇄",
+          process_type: "디지털인쇄",
+          process_company: "태산인디고",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "완료",
+          process_memo: "메모",
+        },
+        {
+          process_category: "후가공",
+          process_type: "금박",
+          process_company: "신화사금박",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "미완료",
+          process_memo: "메모",
+        },
+      ],
+    },
+    task_order_date: "25-07-28 13:00",
+    task_delivery_date: "25-07-29 13:00",
   },
   {
     id: 2,
-    title: "명함",
-    client: "피앤제이",
-    status: "완료",
-    priority: "보통",
-    details: ["인쇄", "귀도리", "코팅"],
-    time: "25-07-28 12:00",
-    time2: "25-07-29 12:00",
+    task_title: "명함",
+    task_company: "피앤제이",
+    task_progressing: "완료",
+    task_priority: "보통",
+    task_detail: {
+      delivery_type: "방문수령",
+      task_desc: "명함 제작",
+      paper_size: "90*55mm",
+      product_size: "90*55mm",
+      paper_type: "스노우300g",
+      process: [
+        {
+          process_category: "인쇄",
+          process_type: "디지털인쇄",
+          process_company: "내부인쇄",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "완료",
+          process_memo: "완료",
+        },
+        {
+          process_category: "후가공",
+          process_type: "코팅",
+          process_company: "자체코팅",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "완료",
+          process_memo: "완료",
+        },
+      ],
+    },
+    task_order_date: "25-07-28 12:00",
+    task_delivery_date: "25-07-29 12:00",
+  },
+  {
+    id: 1754027315270,
+    task_company: "dd",
+    task_delivery_date: "2025년 08월 01일",
+    task_detail: {
+      delivery_type: "자가",
+      paper_size: "3123",
+      paper_type: "123123",
+      process: [
+        {
+          process_category: "인쇄",
+          process_type: "옵셋인쇄",
+          process_company: "114프린팅",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "미완료",
+          process_memo: "",
+        },
+        {
+          process_category: "코팅",
+          process_type: "단면무광코팅",
+          process_company: "우신코팅",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "미완료",
+          process_memo: "",
+        },
+        {
+          process_category: "목형",
+          process_type: "목형",
+          process_company: "외부업체",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "미완료",
+          process_memo: "",
+        },
+        {
+          process_category: "목형3",
+          process_type: "기타",
+          process_company: "외부업체",
+          process_company_tel: "02-1234-5678",
+          process_stauts: "미완료",
+          process_memo: "",
+        },
+      ],
+      product_size: "123123",
+      task_desc: "",
+    },
+    task_order_date: "2025년 08월 01일",
+    task_priority: "긴급",
+    task_progressing: "대기",
+    task_title: "dd",
   },
 ];
 
@@ -58,14 +186,21 @@ export default function HomeScreen() {
       Alert.alert("입력 오류", "작업명과 고객명을 모두 입력해주세요.");
       return;
     }
-    const newJob = {
+    const newJob: JobData = {
       id: Date.now(),
-      title: newJobTitle,
-      client: newJobClient,
-      status: "대기", // 새 작업은 '대기' 상태로 시작
-      priority: "보통", // 기본 우선순위
-      details: [], // 초기에는 세부 사항 없음
-      time: new Date().toLocaleString("ko-KR", {
+      task_title: newJobTitle,
+      task_company: newJobClient,
+      task_progressing: "대기", // 새 작업은 '대기' 상태로 시작
+      task_priority: "보통", // 기본 우선순위
+      task_detail: {
+        delivery_type: "택배 배송",
+        task_desc: "새로운 작업",
+        paper_size: "",
+        product_size: "",
+        paper_type: "",
+        process: [],
+      },
+      task_order_date: new Date().toLocaleString("ko-KR", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -73,7 +208,7 @@ export default function HomeScreen() {
         minute: "2-digit",
         hour12: false,
       }),
-      time2: new Date().toLocaleString("ko-KR", {
+      task_delivery_date: new Date().toLocaleString("ko-KR", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -100,9 +235,9 @@ export default function HomeScreen() {
     if (selectedTab === "전체") {
       return true;
     } else if (selectedTab === "진행중") {
-      return job.status === "진행중";
+      return job.task_progressing === "진행중";
     } else if (selectedTab === "완료") {
-      return job.status === "완료";
+      return job.task_progressing === "완료";
     }
     return true;
   });
@@ -158,122 +293,77 @@ export default function HomeScreen() {
             {filteredJobs.map((job) => (
               <View key={job.id} style={styles.jobCard}>
                 <View style={styles.jobCardHeader}>
-                  <Text style={styles.jobTitle}>{job.title}</Text>
+                  <Text style={styles.jobTitle}>{job.task_title}</Text>
                   <View style={styles.jobClientContainer}>
                     <Ionicons name="business-outline" size={16} color="#999" />
-                    <Text style={styles.clientText}>{job.client}</Text>
+                    <Text style={styles.clientText}>{job.task_company}</Text>
                   </View>
                 </View>
                 <View style={styles.statusAndPriority}>
-                  <Text style={getPriorityStyle(job.priority)}>
-                    {job.priority}
+                  <Text style={getPriorityStyle(job.task_priority)}>
+                    {job.task_priority}
                   </Text>
-                  <Text style={getStatusStyle(job.status)}>{job.status}</Text>
+                  <Text style={getStatusStyle(job.task_progressing)}>
+                    {job.task_progressing}
+                  </Text>
                 </View>
                 <View style={styles.detailsContainer}>
-                  {job.details.map((detail, index) => (
-                    <Text key={index} style={styles.detailTag}>
-                      {detail}
+                  {job.task_detail.process.map((process, index) => (
+                    <Text
+                      key={index}
+                      style={[
+                        styles.detailTag,
+                        process.process_stauts === "완료" &&
+                          styles.detailTagActive,
+                      ]}
+                    >
+                      {process.process_category}
                     </Text>
                   ))}
-                  {job.details.length > 3 && (
-                    <Text style={styles.detailTag}>
-                      +{job.details.length - 3}
-                    </Text>
-                  )}
                 </View>
 
                 {/* 타임라인 섹션 */}
                 <View style={styles.timelineContainer}>
                   <Text style={styles.timelineTitle}>진행 상황</Text>
                   <View style={styles.timeline}>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>인쇄</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          스노우화이트
-                        </Text>
-                        <Text style={styles.timelineTime}>07-28</Text>
+                    {job.task_detail.process.map((process, index) => (
+                      <View key={index} style={styles.timelineItem}>
+                        <View
+                          style={[
+                            styles.timelineDot,
+                            process.process_stauts === "완료" &&
+                              styles.timelineDotActive,
+                          ]}
+                        />
+                        <View style={styles.timelineContent}>
+                          <Text
+                            style={styles.timelineText}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {process.process_category}
+                          </Text>
+                          <Text
+                            style={styles.timelineCompany}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {process.process_company}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>코팅</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          우신코팅
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-28
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>금박</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          신화사금박
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-29
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View style={[styles.timelineDot]} />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>출고</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          CJ대한통운
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-29
-                        </Text>
-                      </View>
-                    </View>
+                    ))}
                   </View>
                 </View>
 
                 <View style={styles.jobCardFooter}>
                   <View>
-                    <Text style={styles.jobTime}>발주일: {job.time}</Text>
-                    <Text style={styles.jobTime}>납품일: {job.time2}</Text>
+                    <Text style={styles.jobTime}>
+                      발주일: {job.task_order_date}
+                    </Text>
+                    <Text style={styles.jobTime}>
+                      납품일: {job.task_delivery_date}
+                    </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.detailButton}
@@ -337,7 +427,7 @@ export default function HomeScreen() {
 }
 
 // 상태에 따른 스타일 반환 함수
-const getStatusStyle = (status: any) => {
+const getStatusStyle = (status: string) => {
   switch (status) {
     case "진행중":
       return [styles.statusTag, styles.statusInProgress];
@@ -351,7 +441,7 @@ const getStatusStyle = (status: any) => {
 };
 
 // 우선순위에 따른 스타일 반환 함수
-const getPriorityStyle = (priority: any) => {
+const getPriorityStyle = (priority: string) => {
   switch (priority) {
     case "긴급":
       return [styles.priorityTag, styles.priorityUrgent];
@@ -553,6 +643,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#555",
     fontWeight: "500",
+  },
+  detailTagActive: {
+    backgroundColor: "#4fff6c",
+    color: "#555",
   },
   jobCardFooter: {
     flexDirection: "row",

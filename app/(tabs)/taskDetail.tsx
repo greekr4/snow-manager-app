@@ -15,6 +15,36 @@ import {
 // KeyboardAwareScrollView를 다시 사용합니다.
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
+// 타입 정의
+interface ProcessItem {
+  process_category: string;
+  process_type: string;
+  process_company: string;
+  process_company_tel: string;
+  process_stauts: string;
+  process_memo: string;
+}
+
+interface TaskDetail {
+  delivery_type: string;
+  task_desc: string;
+  paper_size: string;
+  product_size: string;
+  paper_type: string;
+  process: ProcessItem[];
+}
+
+interface JobData {
+  id: number;
+  task_title: string;
+  task_company: string;
+  task_progressing: string;
+  task_priority: string;
+  task_detail: TaskDetail;
+  task_order_date: string;
+  task_delivery_date: string;
+}
+
 // DetailItem, DetailFinish, Comment, CommentForm 컴포넌트는 이전과 동일합니다.
 // (코드 길이상 생략)
 
@@ -260,6 +290,9 @@ export default function TaskDetailScreen() {
     );
   }
 
+  // selectedTask를 JobData 타입으로 캐스팅
+  const task = selectedTask as any;
+
   return (
     <KeyboardAwareScrollView
       style={styles.container} // container 스타일을 여기에 적용
@@ -280,29 +313,29 @@ export default function TaskDetailScreen() {
       {/* 작업 정보 카드 */}
       <View style={styles.taskCard}>
         <View style={styles.taskHeader}>
-          <Text style={styles.taskTitle}>{selectedTask.title}</Text>
+          <Text style={styles.taskTitle}>{task.task_title}</Text>
           <View style={styles.taskClientContainer}>
             <Ionicons name="business-outline" size={16} color="#999" />
-            <Text style={styles.clientText}>{selectedTask.client}</Text>
+            <Text style={styles.clientText}>{task.task_company}</Text>
           </View>
         </View>
 
         <View style={styles.statusAndPriority}>
-          <Text style={getPriorityStyle(selectedTask.priority)}>
-            {selectedTask.priority}
+          <Text style={getPriorityStyle(task.task_priority)}>
+            {task.task_priority}
           </Text>
-          <Text style={getStatusStyle(selectedTask.status)}>
-            {selectedTask.status}
+          <Text style={getStatusStyle(task.task_progressing)}>
+            {task.task_progressing}
           </Text>
         </View>
         <View style={styles.dateContainer}>
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>발주일</Text>
-            <Text style={styles.dateValue}>{selectedTask.time}</Text>
+            <Text style={styles.dateValue}>{task.task_order_date}</Text>
           </View>
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>납품일</Text>
-            <Text style={styles.dateValue}>{selectedTask.time2}</Text>
+            <Text style={styles.dateValue}>{task.task_delivery_date}</Text>
           </View>
         </View>
       </View>
@@ -311,110 +344,55 @@ export default function TaskDetailScreen() {
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>진행 상황</Text>
         <View style={styles.timeline}>
-          <View style={styles.timelineItem}>
-            <View style={[styles.timelineDot, styles.timelineDotActive]} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineText}>인쇄</Text>
-              <Text
-                style={styles.timelineCompany}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                스노우화이트
-              </Text>
-              <Text
-                style={styles.timelineTime}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                07-29
-              </Text>
-            </View>
-          </View>
-          <View style={styles.timelineItem}>
-            <View style={[styles.timelineDot, styles.timelineDotActive]} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineText}>코팅</Text>
-              <Text
-                style={styles.timelineCompany}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                우신코팅
-              </Text>
-              <Text
-                style={styles.timelineTime}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                07-29
-              </Text>
-            </View>
-          </View>
-          <View style={styles.timelineItem}>
-            <View style={[styles.timelineDot, styles.timelineDotActive]} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineText}>금박</Text>
-              <Text
-                style={styles.timelineCompany}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                신화사금박
-              </Text>
-              <Text
-                style={styles.timelineTime}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                07-29
-              </Text>
-            </View>
-          </View>
-          <View style={styles.timelineItem}>
-            <View style={styles.timelineDot} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineText}>출고</Text>
-              <Text
-                style={styles.timelineCompany}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                CJ대한통운
-              </Text>
-              <Text
-                style={styles.timelineTime}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                07-29
-              </Text>
-            </View>
-          </View>
+          {task.task_detail.process.map(
+            (process: ProcessItem, index: number) => (
+              <View key={index} style={styles.timelineItem}>
+                <View
+                  style={[
+                    styles.timelineDot,
+                    process.process_stauts === "완료" &&
+                      styles.timelineDotActive,
+                  ]}
+                />
+                <View style={styles.timelineContent}>
+                  <Text style={styles.timelineText}>
+                    {process.process_category}
+                  </Text>
+                  <Text
+                    style={styles.timelineCompany}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {process.process_company}
+                  </Text>
+                </View>
+              </View>
+            )
+          )}
         </View>
       </View>
 
       {/* 상세 정보 */}
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>상세정보</Text>
-        <DetailItem label="설명" value="인쇄 후 재단 및 출고" minHeight={100} />
-        <DetailItem label="용지" value="아르떼 230g" />
-        <DetailItem label="개별사이즈" value="100x150mm" />
-        <DetailItem label="용지사이즈" value="467x315mm" />
-        <DetailItem label="납품방식" value="퀵" />
-        <DetailFinish
-          label="인쇄"
-          title="옵셋인쇄"
-          company="동양인쇄"
-          tel="010-1234-5678"
+        <DetailItem
+          label="설명"
+          value={task.task_detail.task_desc}
+          minHeight={100}
         />
-        <DetailFinish
-          label="코팅"
-          title="단면무광코팅"
-          company="우신코팅"
-          tel="010-4567-5678"
-        />
-        <DetailFinish label="배송" title="택배배송" company="CJ대한통운" />
+        <DetailItem label="용지" value={task.task_detail.paper_type} />
+        <DetailItem label="용지사이즈" value={task.task_detail.paper_size} />
+        <DetailItem label="개별사이즈" value={task.task_detail.product_size} />
+        <DetailItem label="납품방식" value={task.task_detail.delivery_type} />
+        {task.task_detail.process.map((process: ProcessItem, index: number) => (
+          <DetailFinish
+            key={index}
+            label={process.process_category}
+            title={process.process_type}
+            company={process.process_company}
+            tel={process.process_company_tel}
+          />
+        ))}
       </View>
 
       {/* 댓글 섹션 */}
@@ -479,9 +457,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F2F5",
   },
   content: {
-    // ScrollView의 contentContainerStyle로 이동
     padding: 20,
-    // 키보드가 닫힐 때 하단에 충분한 공간을 주기 위해 paddingBottom을 추가합니다.
     paddingBottom: 100,
   },
   noDataContainer: {

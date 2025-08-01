@@ -15,7 +15,15 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
+import { PanGestureHandler } from "react-native-gesture-handler";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import Reanimated, {
+  runOnJS,
+  useAnimatedGestureHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 export default function TaskCreate() {
   const router = useRouter();
@@ -29,19 +37,32 @@ export default function TaskCreate() {
   ).current;
 
   const [formData, setFormData] = useState({
-    taskName: "",
-    client: "",
-    orderDate: new Date(),
-    deliveryDate: new Date(),
-    deliveryMethod: "",
-    description: "",
-    originalSize: "",
-    individualSize: "",
-    paper: "",
+    task_title: "",
+    task_company: "",
+    task_order_date: new Date(),
+    task_delivery_date: new Date(),
+    delivery_type: "",
+    task_desc: "",
+    paper_size: "",
+    product_size: "",
+    paper_type: "",
     printing: "",
-    postProcessing: {} as Record<string, string[]>,
-    priority: "보통",
+    task_priority: "보통",
   });
+
+  // 공정 순서 관리를 위한 state (샘플 데이터 형식에 맞춤)
+  const [processOrder, setProcessOrder] = useState<
+    Array<{
+      id: string;
+      process_category: string;
+      process_type: string;
+      process_company: string;
+      process_company_tel: string;
+      process_stauts: "완료" | "진행중" | "미완료";
+      process_memo: string;
+      order: number;
+    }>
+  >([]);
 
   const [showOrderDatePicker, setShowOrderDatePicker] = useState(false);
   const [showDeliveryDatePicker, setShowDeliveryDatePicker] = useState(false);
@@ -49,10 +70,6 @@ export default function TaskCreate() {
   const [showPrintingMethodModal, setShowPrintingMethodModal] = useState(false);
   const [showPostProcessingModal, setShowPostProcessingModal] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
-  const [
-    expandedPostProcessingCategories,
-    setExpandedPostProcessingCategories,
-  ] = useState<string[]>([]);
   const [expandedDeliveryCategories, setExpandedDeliveryCategories] = useState<
     string[]
   >(["납품방식"]);
@@ -61,24 +78,45 @@ export default function TaskCreate() {
   const [pickerDate, setPickerDate] = useState(new Date());
 
   // 납품방식 옵션
-  const deliveryMethodOptions = {
-    납품방식: ["택배", "퀵", "자가", "방문수령", "기타"],
-  };
+  const deliveryMethodOptions = [
+    {
+      category: "납품방식",
+      options: ["택배", "퀵", "자가", "방문수령", "기타"],
+    },
+  ];
 
   // 인쇄방식 옵션
-  const printingMethodOptions = {
-    디지털인쇄: ["내부인쇄", "태산인디고", "기타"],
-    옵셋인쇄: ["동양인쇄", "114 프린팅", "기타"],
-  };
+  const printingMethodOptions = [
+    {
+      category: "디지털인쇄",
+      type: ["1도/0도", "1도/1도", "4도/0도", "4도/4도"],
+      options: ["내부인쇄", "태산인디고", "기타"],
+    },
+    {
+      category: "옵셋인쇄",
+      type: ["1도/0도", "1도/1도", "4도/0도", "4도/4도"],
+      options: ["동양인쇄", "114 프린팅", "기타"],
+    },
+  ];
 
   // 후가공 옵션
-  const postProcessingOptions = {
-    코팅: ["자체코팅", "외부코팅", "기타"],
-    박: ["자체박", "외부박", "기타"],
-    목형: ["자체목형", "외부목형", "V컷", "기타"],
-    목형2: ["자체목형", "외부목형", "V컷", "기타"],
-    목형3: ["자체목형", "외부목형", "V컷", "기타"],
-  };
+  const postProcessingOptions = [
+    {
+      category: "코팅",
+      type: ["단면무광", "양면무광", "단면유광", "양면유광"],
+      options: ["자체코팅", "외부코팅", "기타"],
+    },
+    {
+      category: "박",
+      type: ["금박", "은박", "홀로그램박", "기타"],
+      options: ["신화사금박", "기타"],
+    },
+    {
+      category: "목형",
+      type: ["목형"],
+      options: ["자체목형", "외부목형", "V컷코팅", "기타"],
+    },
+  ];
 
   // 모달 열기/닫기 애니메이션 함수들
   const handleOpenDeliveryModal = () => {
@@ -138,53 +176,229 @@ export default function TaskCreate() {
     });
   };
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  const handleInputChange = (
+    field: string,
+    value: string,
+    type?: string,
+    category?: string
+  ) => {
+    // 인쇄 선택 시 토글로 취소되도록 수정
+    if (field === "printing") {
+      if (formData.printing === value) {
+        // 같은 값이 선택된 경우 취소
+        setFormData((prev) => ({
+          ...prev,
+          [field]: "",
+        }));
+        // 인쇄 선택 해제 시 제거
+        setProcessOrder((prevOrder) =>
+          prevOrder.filter((item) => item.process_category !== "인쇄")
+        );
+        return;
+      } else {
+        // 다른 값이 선택된 경우 변경
+        setFormData((prev) => ({
+          ...prev,
+          [field]: value,
+        }));
+      }
+    } else {
+      // 다른 필드는 기존 로직 유지
+      setFormData((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    }
+
+    // 인쇄 선택 시 순서 목록에 추가
+    if (field === "printing" && value && type && category) {
+      setProcessOrder((prevOrder) => {
+        // 기존 인쇄 항목 제거
+        const filteredOrder = prevOrder.filter(
+          (item) => item.process_category !== "인쇄"
+        );
+
+        // 새로운 인쇄 항목 추가
+        return [
+          ...filteredOrder,
+          {
+            id: `printing-${value}-${Date.now()}`,
+            process_category: "인쇄",
+            process_type: `${category}(${type})`,
+            process_company: value,
+            process_company_tel: "02-1234-5678",
+            process_stauts: "미완료" as const,
+            process_memo: "",
+            order: filteredOrder.length,
+          },
+        ];
+      });
+    }
   };
 
-  const handlePostProcessingChange = (category: string, option: string) => {
-    setFormData((prev) => {
-      const currentPostProcessing = prev.postProcessing as Record<
-        string,
-        string[]
-      >;
-      const currentCategory = currentPostProcessing[category] || [];
+  const handlePostProcessingChange = (
+    category: string,
+    type: string,
+    option: string
+  ) => {
+    setProcessOrder((prevOrder) => {
+      const existingItem = prevOrder.find(
+        (item) =>
+          item.process_category === category &&
+          item.process_type === type &&
+          item.process_company === option
+      );
 
-      let newCategory: string[];
-      if (currentCategory.includes(option)) {
+      if (existingItem) {
         // 이미 선택된 경우 제거
-        newCategory = [];
+        return prevOrder.filter(
+          (item) =>
+            !(
+              item.process_category === category &&
+              item.process_type === type &&
+              item.process_company === option
+            )
+        );
       } else {
-        // 선택되지 않은 경우 해당 카테고리에서 1개만 선택
-        newCategory = [option];
-      }
+        // 같은 카테고리-타입 조합의 기존 항목들 제거
+        const filteredOrder = prevOrder.filter(
+          (item) =>
+            !(item.process_category === category && item.process_type === type)
+        );
 
-      return {
-        ...prev,
-        postProcessing: {
-          ...currentPostProcessing,
-          [category]: newCategory,
-        } as Record<string, string[]>,
-      };
+        // 새로운 항목 추가
+        return [
+          ...filteredOrder,
+          {
+            id: `${category}-${type}-${option}-${Date.now()}`,
+            process_category: category,
+            process_type: type,
+            process_company: option,
+            process_company_tel: "02-1234-5678",
+            process_stauts: "미완료" as const,
+            process_memo: "",
+            order: filteredOrder.length,
+          },
+        ];
+      }
     });
   };
 
   const getSelectedPostProcessingText = () => {
-    const postProcessing = formData.postProcessing as Record<string, string[]>;
-    const selectedItems = Object.entries(postProcessing)
-      .filter(([category, items]) => items && items.length > 0)
-      .map(([category, items]) => `[${category}] ${items[0]}`);
+    const selectedItems = processOrder
+      .filter((item) => item.process_category !== "인쇄")
+      .map((item) => `${item.process_category} [${item.process_company}]`);
 
     return selectedItems.length > 0
       ? selectedItems.join(", ")
       : "후가공을 선택하세요";
   };
 
+  // 드래그 가능한 공정 순서 조절 컴포넌트
+  const DraggableProcessItem = ({
+    item,
+    index,
+    onReorder,
+  }: {
+    item: {
+      id: string;
+      process_category: string;
+      process_type: string;
+      process_company: string;
+      process_company_tel: string;
+      process_stauts: "완료" | "진행중" | "미완료";
+      process_memo: string;
+      order: number;
+    };
+    index: number;
+    onReorder: (fromIndex: number, toIndex: number) => void;
+  }) => {
+    const translateY = useSharedValue(0);
+    const scale = useSharedValue(1);
+
+    const gestureHandler = useAnimatedGestureHandler({
+      onStart: () => {
+        scale.value = withSpring(1.05);
+      },
+      onActive: (event) => {
+        translateY.value = event.translationY;
+      },
+      onEnd: () => {
+        scale.value = withSpring(1);
+        const newIndex = Math.round(translateY.value / 80) + index;
+        if (
+          newIndex !== index &&
+          newIndex >= 0 &&
+          newIndex < processOrder.length
+        ) {
+          runOnJS(onReorder)(index, newIndex);
+        }
+        translateY.value = withSpring(0);
+      },
+    });
+
+    const animatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ translateY: translateY.value }, { scale: scale.value }],
+        zIndex: scale.value === 1.05 ? 1000 : 1,
+      };
+    });
+
+    // 공정 타입에 따른 아이콘과 색상
+    const getProcessIcon = () => {
+      if (item.process_category === "인쇄") {
+        return { name: "print-outline", color: "#007AFF" };
+      } else {
+        return { name: "construct-outline", color: "#34C759" };
+      }
+    };
+
+    const icon = getProcessIcon();
+
+    return (
+      <PanGestureHandler onGestureEvent={gestureHandler}>
+        <Reanimated.View style={[styles.draggableItem, animatedStyle]}>
+          <View style={styles.draggableItemContent}>
+            <View style={styles.dragHandle}>
+              <Ionicons name="menu" size={20} color="#666" />
+            </View>
+            <View style={styles.processIcon}>
+              <Ionicons name={icon.name as any} size={20} color={icon.color} />
+            </View>
+            <View style={styles.draggableItemInfo}>
+              <Text style={styles.draggableItemCategory}>
+                [{item.process_category}]
+              </Text>
+              <Text style={styles.draggableItemOption}>
+                {item.process_type} - {item.process_company}
+              </Text>
+            </View>
+            <View style={styles.orderNumber}>
+              <Text style={styles.orderNumberText}>{index + 1}</Text>
+            </View>
+          </View>
+        </Reanimated.View>
+      </PanGestureHandler>
+    );
+  };
+
+  // 순서 재정렬 함수
+  const handleReorder = (fromIndex: number, toIndex: number) => {
+    const newOrder = [...processOrder];
+    const [movedItem] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, movedItem);
+
+    // order 값 업데이트
+    const updatedOrder = newOrder.map((item, index) => ({
+      ...item,
+      order: index,
+    }));
+
+    setProcessOrder(updatedOrder);
+  };
+
   const handleDateChange = (
-    field: "orderDate" | "deliveryDate",
+    field: "task_order_date" | "task_delivery_date",
     date: Date
   ) => {
     setFormData((prev) => ({
@@ -195,17 +409,47 @@ export default function TaskCreate() {
 
   const handleSubmit = () => {
     // 필수 필드 검증
-    if (!formData.taskName.trim()) {
+    if (!formData.task_title.trim()) {
       Alert.alert("오류", "작업명을 입력해주세요.");
       return;
     }
-    if (!formData.client.trim()) {
+    if (!formData.task_company.trim()) {
       Alert.alert("오류", "발주처를 입력해주세요.");
       return;
     }
 
+    // sampleData.json 형식에 맞춘 최종 데이터
+    const finalData = {
+      id: Date.now(),
+      task_title: formData.task_title,
+      task_company: formData.task_company,
+      task_progressing: "대기",
+      task_priority: formData.task_priority,
+      task_detail: {
+        delivery_type: formData.delivery_type,
+        task_desc: formData.task_desc,
+        paper_size: formData.paper_size,
+        product_size: formData.product_size,
+        paper_type: formData.paper_type,
+        process: processOrder.map((item, index) => ({
+          process_category: item.process_category,
+          process_type: item.process_type,
+          process_company: item.process_company,
+          process_company_tel: item.process_company_tel,
+          process_stauts: item.process_stauts,
+          process_memo: item.process_memo,
+        })),
+      },
+      task_order_date: formatDate(formData.task_order_date),
+      task_delivery_date: formatDate(formData.task_delivery_date),
+    };
+
     // 작업 생성 로직 (여기에 실제 저장 로직 추가)
-    console.log("생성된 작업 데이터:", formData);
+    console.log("생성된 작업 데이터:", finalData);
+    console.log(
+      "공정 순서 JSON:",
+      JSON.stringify(finalData.task_detail.process, null, 2)
+    );
     Alert.alert("성공", "작업이 생성되었습니다.", [
       { text: "확인", onPress: () => router.back() },
     ]);
@@ -219,13 +463,272 @@ export default function TaskCreate() {
   };
 
   // iOS용 DatePicker 열기 핸들러
-  const openIosDatePicker = (field: "orderDate" | "deliveryDate") => {
+  const openIosDatePicker = (
+    field: "task_order_date" | "task_delivery_date"
+  ) => {
     setPickerDate(formData[field]); // 현재 설정된 날짜로 picker 초기화
-    if (field === "orderDate") {
+    if (field === "task_order_date") {
       setShowOrderDatePicker(true);
     } else {
       setShowDeliveryDatePicker(true);
     }
+  };
+
+  // 후가공 아코디언 컴포넌트
+  const PostProcessingAccordion = ({
+    item,
+    processOrder,
+    onPostProcessingChange,
+  }: {
+    item: {
+      category: string;
+      type: string[];
+      options: string[];
+    };
+    processOrder: Array<{
+      id: string;
+      process_category: string;
+      process_type: string;
+      process_company: string;
+      process_company_tel: string;
+      process_stauts: "완료" | "진행중" | "미완료";
+      process_memo: string;
+      order: number;
+    }>;
+    onPostProcessingChange: (
+      category: string,
+      type: string,
+      option: string
+    ) => void;
+  }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [selectedType, setSelectedType] = useState("");
+
+    const { category, type, options } = item;
+    const selectedItems = processOrder
+      .filter((item) => item.process_category === category)
+      .map((item) => `${item.process_type} - ${item.process_company}`);
+    const selectedText = selectedItems.length > 0 ? `${selectedItems[0]}` : "";
+
+    return (
+      <View
+        style={[
+          styles.categorySection,
+          isExpanded && {
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.categoryHeader}
+          onPress={() => {
+            setIsExpanded(!isExpanded);
+            if (!isExpanded) {
+              setSelectedType("");
+            }
+          }}
+        >
+          <View style={styles.categoryTitleContainer}>
+            <Text style={styles.categoryTitle}>{category}</Text>
+            {selectedItems.length > 0 && (
+              <Text style={styles.selectedItemsText}>{selectedText}</Text>
+            )}
+          </View>
+          <Ionicons
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={20}
+            color="#666"
+          />
+        </TouchableOpacity>
+        {isExpanded && (
+          <View style={styles.categoryOptions}>
+            {/* 타입 선택 */}
+            <View style={styles.typeSelectionSection}>
+              <View style={styles.typeButtonsContainer}>
+                {type.map((typeItem) => (
+                  <TouchableOpacity
+                    key={typeItem}
+                    style={[
+                      styles.typeButton,
+                      selectedType === typeItem && styles.typeButtonActive,
+                    ]}
+                    onPress={() => setSelectedType(typeItem)}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        selectedType === typeItem &&
+                          styles.typeButtonTextActive,
+                      ]}
+                    >
+                      {typeItem}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* 회사 선택 (타입 선택 후에만 표시) */}
+            {selectedType && (
+              <View style={styles.companySelectionSection}>
+                {options.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={styles.optionItem}
+                    onPress={() => {
+                      onPostProcessingChange(category, selectedType, option);
+                    }}
+                  >
+                    <Text style={styles.optionItemText}>{option}</Text>
+                    {selectedItems.includes(`${selectedType} - ${option}`) && (
+                      <Ionicons name="checkmark" size={16} color="#007AFF" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // 인쇄방식 아코디언 컴포넌트
+  const PrintingAccordion = ({
+    item,
+    formData,
+    onInputChange,
+  }: {
+    item: {
+      category: string;
+      type: string[];
+      options: string[];
+    };
+    formData: any;
+    onInputChange: (
+      field: string,
+      value: string,
+      type?: string,
+      category?: string
+    ) => void;
+  }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [selectedType, setSelectedType] = useState("");
+
+    const { category, type, options } = item;
+
+    // 선택된 인쇄 항목 찾기
+    const selectedPrintingItem = processOrder.find(
+      (item) =>
+        item.process_category === "인쇄" &&
+        item.process_type.startsWith(category)
+    );
+    const selectedText = selectedPrintingItem
+      ? `[인쇄] ${selectedPrintingItem.process_type}`
+      : "";
+
+    return (
+      <View
+        style={[
+          styles.categorySection,
+          isExpanded && {
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.categoryHeader}
+          onPress={() => {
+            setIsExpanded(!isExpanded);
+            console.log(processOrder);
+
+            if (!isExpanded) {
+              setSelectedType("");
+            }
+          }}
+        >
+          <View style={styles.categoryTitleContainer}>
+            <Text style={styles.categoryTitle}>{category} </Text>
+            {selectedPrintingItem && (
+              <Text style={styles.selectedItemsText}>
+                {selectedPrintingItem.process_company}
+              </Text>
+            )}
+          </View>
+          <Ionicons
+            name={isExpanded ? "chevron-up" : "chevron-down"}
+            size={20}
+            color="#666"
+          />
+        </TouchableOpacity>
+        {isExpanded && (
+          <View style={styles.categoryOptions}>
+            {/* 타입 선택 */}
+            <View style={styles.typeSelectionSection}>
+              <View style={styles.typeButtonsContainer}>
+                {type.map((typeItem) => (
+                  <TouchableOpacity
+                    key={typeItem}
+                    style={[
+                      styles.typeButton,
+                      selectedType === typeItem && styles.typeButtonActive,
+                    ]}
+                    onPress={() => setSelectedType(typeItem)}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        selectedType === typeItem &&
+                          styles.typeButtonTextActive,
+                      ]}
+                    >
+                      {typeItem}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* 회사 선택 (타입 선택 후에만 표시) */}
+            {selectedType && (
+              <View style={styles.companySelectionSection}>
+                {options.map((option) => {
+                  // 현재 선택된 항목인지 확인
+                  const isSelected = processOrder.some(
+                    (item) =>
+                      item.process_category === "인쇄" &&
+                      item.process_type === `${category}(${selectedType})` &&
+                      item.process_company === option
+                  );
+
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      style={styles.optionItem}
+                      onPress={() => {
+                        onInputChange(
+                          "printing",
+                          option,
+                          selectedType,
+                          category
+                        );
+                      }}
+                    >
+                      <Text style={styles.optionItemText}>{option}</Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark" size={16} color="#007AFF" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
   };
 
   return (
@@ -255,8 +758,8 @@ export default function TaskCreate() {
               />
               <TextInput
                 style={styles.textInput}
-                value={formData.taskName}
-                onChangeText={(value) => handleInputChange("taskName", value)}
+                value={formData.task_title}
+                onChangeText={(value) => handleInputChange("task_title", value)}
                 placeholder="명함"
               />
             </View>
@@ -273,8 +776,10 @@ export default function TaskCreate() {
               />
               <TextInput
                 style={styles.textInput}
-                value={formData.client}
-                onChangeText={(value) => handleInputChange("client", value)}
+                value={formData.task_company}
+                onChangeText={(value) =>
+                  handleInputChange("task_company", value)
+                }
                 placeholder="발주처를 입력하세요"
               />
             </View>
@@ -286,7 +791,7 @@ export default function TaskCreate() {
               style={styles.inputWrapper}
               onPress={() =>
                 Platform.OS === "ios"
-                  ? openIosDatePicker("orderDate")
+                  ? openIosDatePicker("task_order_date")
                   : setShowOrderDatePicker(true)
               }
             >
@@ -297,7 +802,7 @@ export default function TaskCreate() {
                 style={styles.inputIcon}
               />
               <Text style={styles.dateText}>
-                {formatDate(formData.orderDate)}
+                {formatDate(formData.task_order_date)}
               </Text>
             </TouchableOpacity>
           </View>
@@ -308,7 +813,7 @@ export default function TaskCreate() {
               style={styles.inputWrapper}
               onPress={() =>
                 Platform.OS === "ios"
-                  ? openIosDatePicker("deliveryDate")
+                  ? openIosDatePicker("task_delivery_date")
                   : setShowDeliveryDatePicker(true)
               }
             >
@@ -319,7 +824,7 @@ export default function TaskCreate() {
                 style={styles.inputIcon}
               />
               <Text style={styles.dateText}>
-                {formatDate(formData.deliveryDate)}
+                {formatDate(formData.task_delivery_date)}
               </Text>
             </TouchableOpacity>
           </View>
@@ -339,10 +844,10 @@ export default function TaskCreate() {
               <Text
                 style={[
                   styles.textInput,
-                  !formData.deliveryMethod && styles.placeholderText,
+                  !formData.delivery_type && styles.placeholderText,
                 ]}
               >
-                {formData.deliveryMethod || "납품방식을 선택하세요"}
+                {formData.delivery_type || "납품방식을 선택하세요"}
               </Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
@@ -358,10 +863,8 @@ export default function TaskCreate() {
             <View style={styles.inputWrapper}>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                value={formData.description}
-                onChangeText={(value) =>
-                  handleInputChange("description", value)
-                }
+                value={formData.task_desc}
+                onChangeText={(value) => handleInputChange("task_desc", value)}
                 placeholder="작업 설명을 입력하세요"
                 multiline
                 numberOfLines={4}
@@ -380,10 +883,8 @@ export default function TaskCreate() {
               />
               <TextInput
                 style={styles.textInput}
-                value={formData.originalSize}
-                onChangeText={(value) =>
-                  handleInputChange("originalSize", value)
-                }
+                value={formData.paper_size}
+                onChangeText={(value) => handleInputChange("paper_size", value)}
                 placeholder="원단사이즈를 입력하세요"
               />
             </View>
@@ -400,9 +901,9 @@ export default function TaskCreate() {
               />
               <TextInput
                 style={styles.textInput}
-                value={formData.individualSize}
+                value={formData.product_size}
                 onChangeText={(value) =>
-                  handleInputChange("individualSize", value)
+                  handleInputChange("product_size", value)
                 }
                 placeholder="개별 사이즈를 입력하세요"
               />
@@ -420,8 +921,8 @@ export default function TaskCreate() {
               />
               <TextInput
                 style={styles.textInput}
-                value={formData.paper}
-                onChangeText={(value) => handleInputChange("paper", value)}
+                value={formData.paper_type}
+                onChangeText={(value) => handleInputChange("paper_type", value)}
                 placeholder="용지를 입력하세요"
               />
             </View>
@@ -450,7 +951,7 @@ export default function TaskCreate() {
                   !formData.printing && styles.placeholderText,
                 ]}
               >
-                {formData.printing || "인쇄 방식을 선택하세요"}
+                인쇄 방식을 선택하세요
               </Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
@@ -468,18 +969,30 @@ export default function TaskCreate() {
                 color="#666"
                 style={styles.inputIcon}
               />
-              <Text
-                style={[
-                  styles.textInput,
-                  !getSelectedPostProcessingText().includes("선택하세요") &&
-                    styles.placeholderText,
-                ]}
-              >
-                {getSelectedPostProcessingText()}
-              </Text>
+              <Text style={[styles.textInput]}>후가공을 선택하세요</Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
           </View>
+
+          {/* 후가공 순서 조절 섹션 */}
+          {processOrder.length > 0 && (
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>공정 순서 조절</Text>
+              <Text style={styles.orderDescription}>
+                드래그하여 공정 순서를 조절하세요
+              </Text>
+              <View style={styles.orderListContainer}>
+                {processOrder.map((item, index) => (
+                  <DraggableProcessItem
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    onReorder={handleReorder}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>우선순위</Text>
@@ -489,15 +1002,15 @@ export default function TaskCreate() {
                   key={priority}
                   style={[
                     styles.priorityButton,
-                    formData.priority === priority &&
+                    formData.task_priority === priority &&
                       styles.priorityButtonActive,
                   ]}
-                  onPress={() => handleInputChange("priority", priority)}
+                  onPress={() => handleInputChange("task_priority", priority)}
                 >
                   <Text
                     style={[
                       styles.priorityButtonText,
-                      formData.priority === priority &&
+                      formData.task_priority === priority &&
                         styles.priorityButtonTextActive,
                     ]}
                   >
@@ -521,28 +1034,28 @@ export default function TaskCreate() {
       {/* Android DatePicker */}
       {Platform.OS === "android" && showOrderDatePicker && (
         <DateTimePicker
-          value={formData.orderDate}
+          value={formData.task_order_date}
           mode="date"
           display="default"
           locale="ko-KR"
           onChange={(event, selectedDate) => {
             setShowOrderDatePicker(false);
             if (selectedDate) {
-              handleDateChange("orderDate", selectedDate);
+              handleDateChange("task_order_date", selectedDate);
             }
           }}
         />
       )}
       {Platform.OS === "android" && showDeliveryDatePicker && (
         <DateTimePicker
-          value={formData.deliveryDate}
+          value={formData.task_delivery_date}
           mode="date"
           display="default"
           locale="ko-KR"
           onChange={(event, selectedDate) => {
             setShowDeliveryDatePicker(false);
             if (selectedDate) {
-              handleDateChange("deliveryDate", selectedDate);
+              handleDateChange("task_delivery_date", selectedDate);
             }
           }}
         />
@@ -571,7 +1084,7 @@ export default function TaskCreate() {
               <Text style={styles.iosDatePickerTitle}>발주일 선택</Text>
               <TouchableOpacity
                 onPress={() => {
-                  handleDateChange("orderDate", pickerDate);
+                  handleDateChange("task_order_date", pickerDate);
                   setShowOrderDatePicker(false);
                 }}
                 style={styles.iosDatePickerButton}
@@ -622,7 +1135,7 @@ export default function TaskCreate() {
               <Text style={styles.iosDatePickerTitle}>납품일 선택</Text>
               <TouchableOpacity
                 onPress={() => {
-                  handleDateChange("deliveryDate", pickerDate);
+                  handleDateChange("task_delivery_date", pickerDate);
                   setShowDeliveryDatePicker(false);
                 }}
                 style={styles.iosDatePickerButton}
@@ -679,80 +1192,72 @@ export default function TaskCreate() {
                     nestedScrollEnabled={true}
                     style={{ flex: 1 }}
                   >
-                    {Object.entries(deliveryMethodOptions).map(
-                      ([category, options]) => {
-                        const isExpanded =
-                          expandedDeliveryCategories.includes(category);
-                        return (
-                          <View
-                            key={category}
-                            style={[
-                              styles.categorySection,
-                              isExpanded && {
-                                borderBottomLeftRadius: 0,
-                                borderBottomRightRadius: 0,
-                              },
-                            ]}
+                    {deliveryMethodOptions.map((item) => {
+                      const { category, options } = item;
+                      const isExpanded =
+                        expandedDeliveryCategories.includes(category);
+                      return (
+                        <View
+                          key={category}
+                          style={[
+                            styles.categorySection,
+                            isExpanded && {
+                              borderBottomLeftRadius: 0,
+                              borderBottomRightRadius: 0,
+                            },
+                          ]}
+                        >
+                          <TouchableOpacity
+                            style={styles.categoryHeader}
+                            onPress={() => {
+                              if (isExpanded) {
+                                setExpandedDeliveryCategories(
+                                  expandedDeliveryCategories.filter(
+                                    (cat) => cat !== category
+                                  )
+                                );
+                              } else {
+                                setExpandedDeliveryCategories([
+                                  ...expandedDeliveryCategories,
+                                  category,
+                                ]);
+                              }
+                            }}
                           >
-                            <TouchableOpacity
-                              style={styles.categoryHeader}
-                              onPress={() => {
-                                if (isExpanded) {
-                                  setExpandedDeliveryCategories(
-                                    expandedDeliveryCategories.filter(
-                                      (cat) => cat !== category
-                                    )
-                                  );
-                                } else {
-                                  setExpandedDeliveryCategories([
-                                    ...expandedDeliveryCategories,
-                                    category,
-                                  ]);
-                                }
-                              }}
-                            >
-                              <Text style={styles.categoryTitle}>
-                                {category}
-                              </Text>
-                              <Ionicons
-                                name={
-                                  isExpanded ? "chevron-up" : "chevron-down"
-                                }
-                                size={20}
-                                color="#666"
-                              />
-                            </TouchableOpacity>
-                            {isExpanded && (
-                              <View style={styles.categoryOptions}>
-                                {options.map((option) => (
-                                  <TouchableOpacity
-                                    key={option}
-                                    style={styles.optionItem}
-                                    onPress={() => {
-                                      handleInputChange(
-                                        "deliveryMethod",
-                                        option
-                                      );
-                                    }}
-                                  >
-                                    <Text style={styles.optionItemText}>
-                                      {option}
-                                    </Text>
-                                    {formData.deliveryMethod === option && (
-                                      <Ionicons
-                                        name="checkmark"
-                                        size={16}
-                                        color="#007AFF"
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }
-                    )}
+                            <Text style={styles.categoryTitle}>{category}</Text>
+                            <Ionicons
+                              name={isExpanded ? "chevron-up" : "chevron-down"}
+                              size={20}
+                              color="#666"
+                            />
+                          </TouchableOpacity>
+                          {isExpanded && (
+                            <View style={styles.categoryOptions}>
+                              {options.map((option) => (
+                                <TouchableOpacity
+                                  key={option}
+                                  style={styles.optionItem}
+                                  onPress={() => {
+                                    handleInputChange("delivery_type", option);
+                                  }}
+                                >
+                                  <Text style={styles.optionItemText}>
+                                    {option}
+                                  </Text>
+                                  {formData.delivery_type === option && (
+                                    <Ionicons
+                                      name="checkmark"
+                                      size={16}
+                                      color="#007AFF"
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
                   </KeyboardAwareScrollView>
                 </View>
                 {/* 확인 버튼 */}
@@ -799,77 +1304,14 @@ export default function TaskCreate() {
                     nestedScrollEnabled={true}
                     style={{ flex: 1 }}
                   >
-                    {Object.entries(printingMethodOptions).map(
-                      ([category, options]) => {
-                        const isExpanded =
-                          expandedCategories.includes(category);
-                        return (
-                          <View
-                            key={category}
-                            style={[
-                              styles.categorySection,
-                              isExpanded && {
-                                borderBottomLeftRadius: 0,
-                                borderBottomRightRadius: 0,
-                              },
-                            ]}
-                          >
-                            <TouchableOpacity
-                              style={styles.categoryHeader}
-                              onPress={() => {
-                                if (isExpanded) {
-                                  setExpandedCategories(
-                                    expandedCategories.filter(
-                                      (cat) => cat !== category
-                                    )
-                                  );
-                                } else {
-                                  setExpandedCategories([
-                                    ...expandedCategories,
-                                    category,
-                                  ]);
-                                }
-                              }}
-                            >
-                              <Text style={styles.categoryTitle}>
-                                {category}
-                              </Text>
-                              <Ionicons
-                                name={
-                                  isExpanded ? "chevron-up" : "chevron-down"
-                                }
-                                size={20}
-                                color="#666"
-                              />
-                            </TouchableOpacity>
-                            {isExpanded && (
-                              <View style={styles.categoryOptions}>
-                                {options.map((option) => (
-                                  <TouchableOpacity
-                                    key={option}
-                                    style={styles.optionItem}
-                                    onPress={() => {
-                                      handleInputChange("printing", option);
-                                    }}
-                                  >
-                                    <Text style={styles.optionItemText}>
-                                      {option}
-                                    </Text>
-                                    {formData.printing === option && (
-                                      <Ionicons
-                                        name="checkmark"
-                                        size={16}
-                                        color="#007AFF"
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }
-                    )}
+                    {printingMethodOptions.map((item) => (
+                      <PrintingAccordion
+                        key={item.category}
+                        item={item}
+                        formData={formData}
+                        onInputChange={handleInputChange}
+                      />
+                    ))}
                   </KeyboardAwareScrollView>
                 </View>
                 {/* 확인 버튼 */}
@@ -916,94 +1358,14 @@ export default function TaskCreate() {
                     nestedScrollEnabled={true}
                     style={{ flex: 1 }}
                   >
-                    {Object.entries(postProcessingOptions).map(
-                      ([category, options]) => {
-                        const isExpanded =
-                          expandedPostProcessingCategories.includes(category);
-                        const selectedItems =
-                          (formData.postProcessing as Record<string, string[]>)[
-                            category
-                          ] || [];
-                        const selectedText =
-                          selectedItems.length > 0 ? `${selectedItems[0]}` : "";
-
-                        return (
-                          <View
-                            key={category}
-                            style={[
-                              styles.categorySection,
-                              isExpanded && {
-                                borderBottomLeftRadius: 0,
-                                borderBottomRightRadius: 0,
-                              },
-                            ]}
-                          >
-                            <TouchableOpacity
-                              style={styles.categoryHeader}
-                              onPress={() => {
-                                if (isExpanded) {
-                                  setExpandedPostProcessingCategories(
-                                    expandedPostProcessingCategories.filter(
-                                      (cat) => cat !== category
-                                    )
-                                  );
-                                } else {
-                                  setExpandedPostProcessingCategories([
-                                    ...expandedPostProcessingCategories,
-                                    category,
-                                  ]);
-                                }
-                              }}
-                            >
-                              <View style={styles.categoryTitleContainer}>
-                                <Text style={styles.categoryTitle}>
-                                  {category}
-                                </Text>
-                                {selectedItems.length > 0 && (
-                                  <Text style={styles.selectedItemsText}>
-                                    {selectedText}
-                                  </Text>
-                                )}
-                              </View>
-                              <Ionicons
-                                name={
-                                  isExpanded ? "chevron-up" : "chevron-down"
-                                }
-                                size={20}
-                                color="#666"
-                              />
-                            </TouchableOpacity>
-                            {isExpanded && (
-                              <View style={styles.categoryOptions}>
-                                {options.map((option) => (
-                                  <TouchableOpacity
-                                    key={option}
-                                    style={styles.optionItem}
-                                    onPress={() => {
-                                      handlePostProcessingChange(
-                                        category,
-                                        option
-                                      );
-                                    }}
-                                  >
-                                    <Text style={styles.optionItemText}>
-                                      {option}
-                                    </Text>
-                                    {selectedItems.includes(option) && (
-                                      <Ionicons
-                                        name="checkmark"
-                                        size={16}
-                                        color="#007AFF"
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }
-                    )}
+                    {postProcessingOptions.map((item) => (
+                      <PostProcessingAccordion
+                        key={item.category}
+                        item={item}
+                        processOrder={processOrder}
+                        onPostProcessingChange={handlePostProcessingChange}
+                      />
+                    ))}
                   </KeyboardAwareScrollView>
                 </View>
                 {/* 확인 버튼 */}
@@ -1294,5 +1656,129 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 20,
+  },
+  // --- Draggable Item Styles ---
+  draggableItem: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+  },
+  draggableItemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+  },
+  dragHandle: {
+    marginRight: 10,
+  },
+  processIcon: {
+    marginRight: 10,
+  },
+  draggableItemInfo: {
+    flex: 1,
+  },
+  draggableItemCategory: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 2,
+  },
+  draggableItemOption: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
+  orderNumber: {
+    backgroundColor: "#F4F3FF",
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minWidth: 30,
+    alignItems: "center",
+  },
+  orderNumberText: {
+    fontSize: 12,
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  orderDescription: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 5,
+    marginBottom: 10,
+  },
+  orderListContainer: {
+    backgroundColor: "#f8f9fa",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 5,
+  },
+  typeSection: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#D0D0D0",
+  },
+  typeTitle: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "600",
+    marginBottom: 8,
+    paddingHorizontal: 10,
+  },
+  typeSelectionSection: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#D0D0D0",
+  },
+  typeSelectionTitle: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "600",
+    marginBottom: 8,
+    paddingHorizontal: 10,
+  },
+  typeButtonsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    paddingHorizontal: 10,
+  },
+  typeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#f9f9f9",
+    marginVertical: 5,
+    marginHorizontal: 5,
+  },
+  typeButtonActive: {
+    backgroundColor: "#007AFF",
+    borderColor: "#007AFF",
+  },
+  typeButtonText: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
+  typeButtonTextActive: {
+    color: "#fff",
+  },
+  companySelectionSection: {},
+  companySelectionTitle: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "600",
+    marginBottom: 8,
+    paddingHorizontal: 10,
   },
 });
