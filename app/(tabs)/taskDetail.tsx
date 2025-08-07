@@ -1,8 +1,9 @@
 import { useTaskStore } from "@/stores/taskStore";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   StyleSheet,
@@ -13,15 +14,17 @@ import {
   View,
 } from "react-native";
 // KeyboardAwareScrollView를 다시 사용합니다.
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
-// 타입 정의
+// 타입 정의 - DB 스키마에 맞게 수정
 interface ProcessItem {
   process_category: string;
   process_type: string;
   process_company: string;
   process_company_tel: string;
-  process_stauts: string;
+  process_status: string;
   process_memo: string;
 }
 
@@ -35,15 +38,65 @@ interface TaskDetail {
 }
 
 interface JobData {
-  id: number;
-  task_title: string;
-  task_company: string;
-  task_progressing: string;
-  task_priority: string;
-  task_detail: TaskDetail;
-  task_order_date: string;
-  task_delivery_date: string;
+  TASK_KEY: string;
+  ADMIN_KEY: string;
+  TASK_TITLE: string;
+  TASK_COMPANY: string;
+  TASK_PRIORITY: string;
+  TASK_PROGRESSING: string;
+  TASK_ORDER_DATE: string;
+  TASK_DELIVERY_DATE: string;
+  TASK_DETAIL: string; // JSON 문자열
+  CREATED_AT: string;
+  UPDATED_AT: string;
 }
+
+// 작업 업데이트를 위한 타입
+interface UpdateTaskParams {
+  taskKey: string;
+  taskDetail: any; // 객체 형태
+}
+
+// 댓글 추가를 위한 타입
+interface CreateCommentParams {
+  taskKey: string;
+  adminKey: string;
+  commentContent: string;
+}
+
+// 로그 추가를 위한 타입
+interface CreateLogParams {
+  taskKey: string;
+  adminKey: string;
+  logContent: string;
+}
+
+// API 함수들
+const fetchTaskDetail = async (taskKey: string) => {
+  const response = await axios.get(`http://192.168.0.4:3000/tasks/${taskKey}`);
+  return response.data;
+};
+
+const createComment = async (params: CreateCommentParams) => {
+  const response = await axios.post(`http://192.168.0.4:3000/comments`, params);
+  return response.data;
+};
+
+const createLog = async (params: CreateLogParams) => {
+  const response = await axios.post(`http://192.168.0.4:3000/logs`, params);
+  return response.data;
+};
+
+const updateTask = async ({ taskKey, taskDetail }: UpdateTaskParams) => {
+  console.log("작업 업데이트 시작:", taskKey, taskDetail);
+  const response = await axios.patch(
+    `http://192.168.0.4:3000/tasks/${taskKey}`,
+    {
+      taskDetail: taskDetail, // updateTasksDto 없이 직접 taskDetail 전송
+    }
+  );
+  return response.data;
+};
 
 // DetailItem, DetailFinish, Comment, CommentForm 컴포넌트는 이전과 동일합니다.
 // (코드 길이상 생략)
@@ -61,6 +114,11 @@ interface DetailFinishProps {
   title: string;
   company: string;
   tel?: string;
+  enabled: boolean;
+  taskKey: string;
+  processIndex: number;
+  onStatusChange: (index: number, status: "완료" | "미완료") => void;
+  isUpdating: boolean;
 }
 
 // Comment
@@ -73,6 +131,7 @@ interface CommentProps {
 // CommentForm
 interface CommentFormProps {
   onSubmit: (comment: string) => void;
+  isLoading?: boolean;
 }
 
 // WorkHistory
@@ -98,9 +157,35 @@ const DetailFinish: React.FC<DetailFinishProps> = ({
   title,
   company,
   tel,
+  enabled,
+  taskKey,
+  processIndex,
+  onStatusChange,
+  isUpdating,
 }) => {
-  const [isEnabled, setIsEnabled] = useState(false);
-  const toggleSwitch = () => setIsEnabled((previousState) => !previousState);
+  // enabled prop이 변경될 때마다 로컬 상태 업데이트
+  React.useEffect(() => {
+    setIsEnabled(enabled);
+  }, [enabled]);
+
+  const [isEnabled, setIsEnabled] = useState(enabled);
+
+  const toggleSwitch = () => {
+    const newStatus = isEnabled ? "미완료" : "완료";
+
+    // 업데이트 중이면 무시
+    if (isUpdating) return;
+
+    console.log(
+      `DetailFinish 토글: ${label} (${processIndex}) - ${isEnabled} -> ${newStatus}`
+    );
+
+    // 즉시 로컬 상태 업데이트 (낙관적 업데이트)
+    setIsEnabled(!isEnabled);
+
+    // 콜백 함수 호출하여 업데이트된 TASK_DETAIL을 받아서 API 호출
+    onStatusChange(processIndex, newStatus);
+  };
 
   const handleCall = async () => {
     try {
@@ -138,7 +223,12 @@ const DetailFinish: React.FC<DetailFinishProps> = ({
             { alignItems: "center", justifyContent: "center" },
           ]}
         >
-          <Switch onValueChange={toggleSwitch} value={isEnabled} />
+          <Switch
+            onValueChange={toggleSwitch}
+            value={isEnabled}
+            // disabled={isUpdating}
+          />
+          {/* {isUpdating && <Text style={styles.loadingText}>업데이트 중...</Text>} */}
         </View>
       </View>
     </View>
@@ -160,12 +250,15 @@ const Comment: React.FC<CommentProps> = ({ user, comment, dataTime }) => {
   );
 };
 
-const CommentForm: React.FC<CommentFormProps> = ({ onSubmit }) => {
+const CommentForm: React.FC<CommentFormProps> = ({
+  onSubmit,
+  isLoading = false,
+}) => {
   const [commentText, setCommentText] = useState("");
   const inputRef = useRef<TextInput>(null);
 
   const handleSubmit = () => {
-    if (commentText.trim()) {
+    if (commentText.trim() && !isLoading) {
       onSubmit(commentText);
       setCommentText("");
       // 제출 후 포커스 해제
@@ -185,17 +278,21 @@ const CommentForm: React.FC<CommentFormProps> = ({ onSubmit }) => {
           multiline
           numberOfLines={1}
           returnKeyType="done"
+          editable={!isLoading}
         />
       </View>
       <TouchableOpacity
         style={[
           styles.commentFormButton,
-          !commentText.trim() && styles.commentFormButtonDisabled,
+          (!commentText.trim() || isLoading) &&
+            styles.commentFormButtonDisabled,
         ]}
         onPress={handleSubmit}
-        disabled={!commentText.trim()}
+        disabled={!commentText.trim() || isLoading}
       >
-        <Text style={styles.commentFormButtonText}>등록</Text>
+        <Text style={styles.commentFormButtonText}>
+          {isLoading ? "등록 중..." : "등록"}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -221,66 +318,303 @@ const WorkHistory: React.FC<WorkHistoryProps> = ({
 
 export default function TaskDetailScreen() {
   const router = useRouter();
-  const { selectedTask, clearSelectedTask } = useTaskStore();
-  const [comments, setComments] = useState([
-    {
-      id: 1,
-      user: "김철수",
-      comment: "인쇄 작업이 완료되었습니다. 다음 단계로 진행하겠습니다.",
-      dataTime: "2024-01-15 14:30",
-    },
-    {
-      id: 2,
-      user: "이영희",
-      comment: "코팅 작업 시작하겠습니다.",
-      dataTime: "2024-01-15 16:45",
-    },
-  ]);
+  const { selectedTask, clearSelectedTask, setSelectedTask } = useTaskStore();
+  const scrollViewRef = useRef<KeyboardAwareScrollView>(null);
+  const queryClient = useQueryClient();
 
-  const [workHistory, setWorkHistory] = useState([
-    {
-      id: 1,
-      dateTime: "2024-01-15 14:30",
-      action: "인쇄 완료",
-      user: "김태균",
-    },
-    {
-      id: 2,
-      dateTime: "2024-01-15 16:45",
-      action: "코팅 시작",
-      user: "이영희",
-    },
-    {
-      id: 3,
-      dateTime: "2024-01-15 18:20",
-      action: "코팅 완료",
-      user: "이영희",
-    },
-    {
-      id: 4,
-      dateTime: "2024-01-16 09:15",
-      action: "금박 시작",
-      user: "박민수",
-    },
-    {
-      id: 5,
-      dateTime: "2024-01-16 11:30",
-      action: "금박 완료",
-      user: "박민수",
-    },
-  ]);
+  // 탭 포커스 시 스크롤을 맨 위로 이동
+  useFocusEffect(
+    React.useCallback(() => {
+      // 약간의 지연을 두어 컴포넌트가 완전히 렌더링된 후 스크롤 실행
+      const timer = setTimeout(() => {
+        if (scrollViewRef.current) {
+          // KeyboardAwareScrollView의 내부 ScrollView에 접근
+          const scrollView = (
+            scrollViewRef.current as any
+          ).getScrollResponder();
+          if (scrollView && scrollView.scrollTo) {
+            scrollView.scrollTo({ x: 0, y: 0, animated: true });
+          }
+        }
+      }, 100);
 
-  const handleAddComment = (commentText: string) => {
-    const newComment = {
-      id: comments.length + 1,
-      user: "현재 사용자",
-      comment: commentText,
-      dataTime: new Date().toLocaleString("ko-KR"),
+      return () => clearTimeout(timer);
+    }, [])
+  );
+
+  // 개별 작업 데이터 패칭
+  const taskKey =
+    (selectedTask as any)?.TASK_KEY || (selectedTask as any)?.task_key;
+  const {
+    data: taskData,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["task-detail", taskKey],
+    queryFn: () => fetchTaskDetail(taskKey),
+    enabled: !!taskKey, // taskKey가 있을 때만 실행
+    staleTime: 1000 * 60 * 5, // 5분
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // 작업 업데이트 mutation (컴포넌트 최상위 레벨에서 호출)
+  const updateTaskMutation = useMutation({
+    mutationFn: updateTask,
+  });
+
+  // 댓글 추가 mutation
+  const createCommentMutation = useMutation({
+    mutationFn: createComment,
+    onSuccess: (data) => {
+      console.log("댓글 추가 성공:", data);
+      // 댓글 추가 후 작업 상세 데이터 리페치
+      queryClient.invalidateQueries({ queryKey: ["task-detail", taskKey] });
+    },
+    onError: (error) => {
+      console.error("댓글 추가 실패:", error);
+      Alert.alert("오류", "댓글 추가에 실패했습니다.");
+    },
+  });
+
+  // 로그 추가 mutation
+  const createLogMutation = useMutation({
+    mutationFn: createLog,
+    onSuccess: (data) => {
+      console.log("로그 추가 성공:", data);
+      // 로그 추가 후 작업 상세 데이터 리페치
+      queryClient.invalidateQueries({ queryKey: ["task-detail", taskKey] });
+    },
+    onError: (error) => {
+      console.error("로그 추가 실패:", error);
+      // 로그 추가 실패는 사용자에게 알리지 않음 (조용히 실패)
+    },
+  });
+
+  // 공정 상태 변경 처리
+  const handleProcessStatusChange = (
+    processIndex: number,
+    newStatus: "완료" | "미완료"
+  ) => {
+    if (!taskData) return;
+
+    // 패칭된 데이터 사용
+    const task = taskData;
+
+    console.log("상태 변경 요청:", {
+      processIndex,
+      newStatus,
+      currentProcesses: parseTaskDetail(task.TASK_DETAIL).process,
+    });
+
+    // 현재 TASK_DETAIL 파싱
+    const currentTaskDetail = parseTaskDetail(task.TASK_DETAIL);
+
+    // 업데이트된 process 배열 생성
+    const updatedProcess = currentTaskDetail.process.map((process, index) => {
+      if (index === processIndex) {
+        console.log(
+          `공정 ${index} 상태 변경: ${process.process_status} -> ${newStatus}`
+        );
+        return { ...process, process_status: newStatus };
+      }
+      return process;
+    });
+
+    // 업데이트된 TASK_DETAIL 객체 생성
+    const updatedTaskDetail = {
+      ...currentTaskDetail,
+      process: updatedProcess,
     };
-    setComments([...comments, newComment]);
+
+    console.log("업데이트된 TASK_DETAIL:", updatedTaskDetail);
+
+    // API 호출
+    updateTaskMutation.mutate(
+      {
+        taskKey: task.TASK_KEY,
+        taskDetail: updatedTaskDetail,
+      },
+      {
+        onSuccess: (data) => {
+          console.log("작업 업데이트 성공:", data);
+
+          // 성공 시 로그 추가
+          const logContent = `[${
+            taskDetail.process[processIndex]?.process_category || "공정"
+          }] "${newStatus}" 변경`;
+          createLogMutation.mutate({
+            taskKey: task.TASK_KEY,
+            adminKey: task.ADMIN_KEY || "tk",
+            logContent: logContent,
+          });
+
+          // 성공 시 로컬 상태 업데이트
+          const updatedTask = {
+            ...task,
+            TASK_DETAIL: JSON.stringify(updatedTaskDetail), // 로컬 상태는 JSON 문자열로 저장
+          };
+
+          // store 업데이트
+          clearSelectedTask();
+          setSelectedTask(updatedTask);
+
+          // 작업 목록 캐시 무효화
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["tasks-count"] });
+          // 현재 작업 상세 캐시 무효화
+          queryClient.invalidateQueries({ queryKey: ["task-detail", taskKey] });
+        },
+        onError: (error) => {
+          console.error("작업 업데이트 실패:", error);
+          Alert.alert("오류", "상태 업데이트에 실패했습니다.");
+
+          // 실패 시 원래 상태로 되돌리기
+          if (selectedTask) {
+            const task = selectedTask as any;
+            clearSelectedTask();
+            setSelectedTask(task);
+          }
+        },
+      }
+    );
   };
 
-  if (!selectedTask) {
+  // 패칭된 데이터에서 댓글과 로그 추출
+  const comments = React.useMemo(() => {
+    if (!taskData?.tb_task_comment) return [];
+
+    return taskData.tb_task_comment.map((comment: any, index: number) => ({
+      id: comment.COMMENT_KEY || index + 1,
+      user: comment.tb_admin_user.ADMIN_NAME || "사용자",
+      comment: comment.COMMENT_CONTENT || "",
+      dataTime: comment.CREATED_AT
+        ? new Date(comment.CREATED_AT).toLocaleString("ko-KR")
+        : "",
+    }));
+  }, [taskData?.tb_task_comment]);
+
+  const workHistory = React.useMemo(() => {
+    if (!taskData?.tb_task_log) return [];
+
+    return taskData.tb_task_log.map((log: any, index: number) => ({
+      id: log.LOG_KEY || index + 1,
+      dateTime: log.CREATED_AT
+        ? new Date(log.CREATED_AT).toLocaleString("ko-KR")
+        : "",
+      action: log.LOG_CONTENT || "",
+      user: log.tb_admin_user?.ADMIN_NAME || "사용자",
+    }));
+  }, [taskData?.tb_task_log]);
+
+  // TASK_DETAIL JSON 파싱 헬퍼 함수
+  const parseTaskDetail = (taskDetailString: string): TaskDetail => {
+    try {
+      // 이미 객체인 경우 바로 반환
+      if (typeof taskDetailString === "object" && taskDetailString !== null) {
+        return taskDetailString as TaskDetail;
+      }
+
+      // 문자열이 아닌 경우 기본값 반환
+      if (typeof taskDetailString !== "string") {
+        return {
+          delivery_type: "",
+          task_desc: "",
+          paper_size: "",
+          product_size: "",
+          paper_type: "",
+          process: [],
+        };
+      }
+
+      // 빈 문자열이거나 null/undefined인 경우
+      if (!taskDetailString || taskDetailString.trim() === "") {
+        return {
+          delivery_type: "",
+          task_desc: "",
+          paper_size: "",
+          product_size: "",
+          paper_type: "",
+          process: [],
+        };
+      }
+
+      const parsed = JSON.parse(taskDetailString);
+      return parsed;
+    } catch (error) {
+      console.error("TASK_DETAIL 파싱 오류:", error);
+      return {
+        delivery_type: "",
+        task_desc: "",
+        paper_size: "",
+        product_size: "",
+        paper_type: "",
+        process: [],
+      };
+    }
+  };
+
+  // 날짜 포맷팅 함수
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    } catch (error) {
+      console.error("날짜 포맷팅 오류:", error);
+      return dateString || "날짜 없음";
+    }
+  };
+
+  const handleAddComment = (commentText: string) => {
+    if (!taskData || !commentText.trim()) return;
+
+    // 댓글 추가 API 호출
+    createCommentMutation.mutate({
+      taskKey: taskData.TASK_KEY,
+      adminKey: taskData.ADMIN_KEY || "tk", // 기본값 설정
+      commentContent: commentText.trim(),
+    });
+  };
+
+  // 로딩 상태
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.noDataContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.noDataText}>데이터를 불러오는 중...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // 에러 상태
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.noDataContainer}>
+          <Ionicons name="alert-circle-outline" size={50} color="#FF6B6B" />
+          <Text style={styles.noDataText}>
+            데이터를 불러오는데 실패했습니다.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => refetch()}
+          >
+            <Text style={styles.retryButtonText}>다시 시도</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // 데이터가 없는 경우
+  if (!taskData) {
     return (
       <View style={styles.container}>
         <View style={styles.noDataContainer}>
@@ -290,11 +624,15 @@ export default function TaskDetailScreen() {
     );
   }
 
-  // selectedTask를 JobData 타입으로 캐스팅
-  const task = selectedTask as any;
+  // 패칭된 데이터 사용
+  const task = taskData;
+
+  // TASK_DETAIL 파싱
+  const taskDetail = parseTaskDetail(task.TASK_DETAIL);
 
   return (
     <KeyboardAwareScrollView
+      ref={scrollViewRef}
       style={styles.container} // container 스타일을 여기에 적용
       contentContainerStyle={styles.content} // content 스타일을 여기에 적용
       enableOnAndroid={true}
@@ -313,29 +651,39 @@ export default function TaskDetailScreen() {
       {/* 작업 정보 카드 */}
       <View style={styles.taskCard}>
         <View style={styles.taskHeader}>
-          <Text style={styles.taskTitle}>{task.task_title}</Text>
+          <Text style={styles.taskTitle}>{task.TASK_TITLE || "제목 없음"}</Text>
           <View style={styles.taskClientContainer}>
             <Ionicons name="business-outline" size={16} color="#999" />
-            <Text style={styles.clientText}>{task.task_company}</Text>
+            <Text style={styles.clientText}>
+              {task.TASK_COMPANY || "고객명 없음"}
+            </Text>
           </View>
         </View>
 
         <View style={styles.statusAndPriority}>
-          <Text style={getPriorityStyle(task.task_priority)}>
-            {task.task_priority}
+          <Text style={getPriorityStyle(task.TASK_PRIORITY || "보통")}>
+            {task.TASK_PRIORITY || "보통"}
           </Text>
-          <Text style={getStatusStyle(task.task_progressing)}>
-            {task.task_progressing}
+          <Text style={getStatusStyle(task.TASK_PROGRESSING || "대기")}>
+            {task.TASK_PROGRESSING || "대기"}
           </Text>
         </View>
         <View style={styles.dateContainer}>
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>발주일</Text>
-            <Text style={styles.dateValue}>{task.task_order_date}</Text>
+            <Text style={styles.dateValue}>
+              {task.TASK_ORDER_DATE
+                ? formatDate(task.TASK_ORDER_DATE)
+                : "날짜 없음"}
+            </Text>
           </View>
           <View style={styles.dateItem}>
             <Text style={styles.dateLabel}>납품일</Text>
-            <Text style={styles.dateValue}>{task.task_delivery_date}</Text>
+            <Text style={styles.dateValue}>
+              {task.TASK_DELIVERY_DATE
+                ? formatDate(task.TASK_DELIVERY_DATE)
+                : "날짜 없음"}
+            </Text>
           </View>
         </View>
       </View>
@@ -344,26 +692,26 @@ export default function TaskDetailScreen() {
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>진행 상황</Text>
         <View style={styles.timeline}>
-          {task.task_detail.process.map(
+          {(taskDetail.process || []).map(
             (process: ProcessItem, index: number) => (
               <View key={index} style={styles.timelineItem}>
                 <View
                   style={[
                     styles.timelineDot,
-                    process.process_stauts === "완료" &&
+                    process.process_status === "완료" &&
                       styles.timelineDotActive,
                   ]}
                 />
                 <View style={styles.timelineContent}>
                   <Text style={styles.timelineText}>
-                    {process.process_category}
+                    {process.process_category || "카테고리 없음"}
                   </Text>
                   <Text
                     style={styles.timelineCompany}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    {process.process_company}
+                    {process.process_company || "업체 없음"}
                   </Text>
                 </View>
               </View>
@@ -377,50 +725,84 @@ export default function TaskDetailScreen() {
         <Text style={styles.CardTitle}>상세정보</Text>
         <DetailItem
           label="설명"
-          value={task.task_detail.task_desc}
+          value={taskDetail.task_desc || "설명 없음"}
           minHeight={100}
         />
-        <DetailItem label="용지" value={task.task_detail.paper_type} />
-        <DetailItem label="용지사이즈" value={task.task_detail.paper_size} />
-        <DetailItem label="개별사이즈" value={task.task_detail.product_size} />
-        <DetailItem label="납품방식" value={task.task_detail.delivery_type} />
-        {task.task_detail.process.map((process: ProcessItem, index: number) => (
-          <DetailFinish
-            key={index}
-            label={process.process_category}
-            title={process.process_type}
-            company={process.process_company}
-            tel={process.process_company_tel}
-          />
-        ))}
+        <DetailItem
+          label="용지"
+          value={taskDetail.paper_type || "용지 정보 없음"}
+        />
+        <DetailItem
+          label="용지사이즈"
+          value={taskDetail.paper_size || "사이즈 정보 없음"}
+        />
+        <DetailItem
+          label="개별사이즈"
+          value={taskDetail.product_size || "개별 사이즈 정보 없음"}
+        />
+        <DetailItem
+          label="납품방식"
+          value={taskDetail.delivery_type || "납품 방식 정보 없음"}
+        />
+        {(taskDetail.process || []).map(
+          (process: ProcessItem, index: number) => (
+            <DetailFinish
+              key={index}
+              label={process.process_category || "카테고리 없음"}
+              title={process.process_type || "타입 없음"}
+              company={process.process_company || "업체 없음"}
+              tel={process.process_company_tel || ""}
+              enabled={process.process_status === "완료"}
+              taskKey={task.TASK_KEY}
+              processIndex={index}
+              onStatusChange={handleProcessStatusChange}
+              isUpdating={updateTaskMutation.isPending}
+            />
+          )
+        )}
       </View>
 
       {/* 댓글 섹션 */}
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>댓글</Text>
-        {comments.map((comment) => (
-          <Comment
-            key={comment.id}
-            user={comment.user}
-            comment={comment.comment}
-            dataTime={comment.dataTime}
-          />
-        ))}
+        {comments.length > 0 ? (
+          comments.map((comment: any) => (
+            <Comment
+              key={comment.id}
+              user={comment.user}
+              comment={comment.comment}
+              dataTime={comment.dataTime}
+            />
+          ))
+        ) : (
+          <View style={styles.emptySection}>
+            <Text style={styles.emptyText}>댓글이 없습니다.</Text>
+          </View>
+        )}
         {/* CommentForm을 원래 위치로 복원합니다. */}
-        <CommentForm onSubmit={handleAddComment} />
+        <CommentForm
+          onSubmit={handleAddComment}
+          isLoading={createCommentMutation.isPending}
+        />
       </View>
 
       {/* 이력 섹션 */}
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>이력</Text>
-        {workHistory.map((history) => (
-          <WorkHistory
-            key={history.id}
-            dateTime={history.dateTime}
-            action={history.action}
-            user={history.user}
-          />
-        ))}
+        {workHistory.length > 0 ? (
+          workHistory.map((history: any) => (
+            <WorkHistory
+              key={history.id}
+              dateTime={history.dateTime}
+              action={history.action}
+              user={history.user}
+            />
+          ))
+        ) : (
+          <View style={styles.emptySection}>
+            <Text style={styles.emptyText}>작업 이력이 없습니다.</Text>
+          </View>
+        )}
       </View>
     </KeyboardAwareScrollView>
   );
@@ -760,7 +1142,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   workHistoryRight: {
-    flexDirection: "row",
+    flexDirection: "column",
     alignItems: "flex-end",
     marginLeft: 10,
   },
@@ -780,5 +1162,31 @@ const styles = StyleSheet.create({
   workHistoryDateTime: {
     fontSize: 12,
     color: "#999",
+  },
+  loadingText: {
+    fontSize: 10,
+    color: "#007AFF",
+    marginTop: 5,
+  },
+  retryButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  emptySection: {
+    alignItems: "center",
+    paddingVertical: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#999",
+    textAlign: "center",
   },
 });

@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
@@ -25,9 +27,121 @@ import Reanimated, {
   withSpring,
 } from "react-native-reanimated";
 
+// 옵션 데이터 타입 정의
+interface OptionCompany {
+  COMPANY_KEY: string;
+  OPTION_KEY: string;
+  COMPANY_NAME: string;
+  COMPANY_TEL: string | null;
+  CREATED_AT: string;
+  UPDATED_AT: string;
+}
+
+interface OptionDetail {
+  DETAIL_KEY: string;
+  OPTION_KEY: string;
+  DETAIL_NAME: string;
+  CREATED_AT: string;
+  UPDATED_AT: string;
+}
+
+interface OptionData {
+  OPTION_KEY: string;
+  OPTION_CATEGORY: string;
+  OPTION_TITLE: string;
+  CREATED_AT: string;
+  UPDATED_AT: string;
+  tb_task_option_company: OptionCompany[];
+  tb_task_option_detail: OptionDetail[];
+}
+
+// 옵션 데이터 가져오기 API
+const fetchOptions = async (): Promise<OptionData[]> => {
+  const response = await axios.get("http://192.168.0.4:3000/options");
+  return response.data;
+};
+
+// 작업 생성 API
+interface CreateTaskDto {
+  adminKey: string;
+  taskTitle: string;
+  taskCompany: string;
+  taskPriority: string;
+  taskProgressing: string;
+  taskOrderDate: Date;
+  taskDeliveryDate: Date;
+  taskDetail: any;
+}
+
+const createTask = async (createTaskDto: CreateTaskDto) => {
+  const response = await axios.post(
+    "http://192.168.0.4:3000/tasks",
+    createTaskDto
+  );
+  return response.data;
+};
+
 export default function TaskCreate() {
   const router = useRouter();
   const screenHeight = Dimensions.get("window").height;
+
+  // 옵션 데이터 가져오기
+  const { data: optionsData, isLoading: optionsLoading } = useQuery({
+    queryKey: ["options"],
+    queryFn: fetchOptions,
+    staleTime: 1000 * 60 * 10, // 10분 캐시
+    refetchOnWindowFocus: false,
+  });
+
+  // 작업 생성 mutation
+  const queryClient = useQueryClient();
+  const createTaskMutation = useMutation({
+    mutationFn: createTask,
+    onSuccess: () => {
+      // 작업 목록 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks-count"] });
+      Alert.alert("성공", "작업이 생성되었습니다.", [
+        { text: "확인", onPress: () => router.back() },
+      ]);
+    },
+    onError: (error) => {
+      console.error("작업 생성 실패:", error);
+      Alert.alert("오류", "작업 생성에 실패했습니다. 다시 시도해주세요.");
+    },
+  });
+
+  // 인쇄 옵션을 DB 데이터로 동적 생성
+  const printingMethodOptions = React.useMemo(() => {
+    if (!optionsData) return [];
+
+    return optionsData
+      .filter((option) => option.OPTION_CATEGORY === "인쇄")
+      .map((option) => ({
+        category: option.OPTION_TITLE,
+        type: option.tb_task_option_detail.map((detail) => detail.DETAIL_NAME),
+        options: option.tb_task_option_company.map(
+          (company) => company.COMPANY_NAME
+        ),
+        optionKey: option.OPTION_KEY,
+      }));
+  }, [optionsData]);
+
+  // 후가공 옵션을 DB 데이터로 동적 생성
+  const postProcessingOptions = React.useMemo(() => {
+    if (!optionsData) return [];
+
+    return optionsData
+      .filter((option) => option.OPTION_CATEGORY === "후가공")
+      .map((option) => ({
+        category: option.OPTION_TITLE,
+        type: option.tb_task_option_detail.map((detail) => detail.DETAIL_NAME),
+        options: option.tb_task_option_company.map(
+          (company) => company.COMPANY_NAME
+        ),
+        optionKey: option.OPTION_KEY,
+      }));
+  }, [optionsData]);
 
   // 애니메이션 값들
   const slideAnimDelivery = useRef(new Animated.Value(screenHeight)).current;
@@ -58,7 +172,7 @@ export default function TaskCreate() {
       process_type: string;
       process_company: string;
       process_company_tel: string;
-      process_stauts: "완료" | "진행중" | "미완료";
+      process_status: "완료" | "진행중" | "미완료";
       process_memo: string;
       order: number;
     }>
@@ -82,39 +196,6 @@ export default function TaskCreate() {
     {
       category: "납품방식",
       options: ["택배", "퀵", "자가", "방문수령", "기타"],
-    },
-  ];
-
-  // 인쇄방식 옵션
-  const printingMethodOptions = [
-    {
-      category: "디지털인쇄",
-      type: ["1도/0도", "1도/1도", "4도/0도", "4도/4도"],
-      options: ["내부인쇄", "태산인디고", "기타"],
-    },
-    {
-      category: "옵셋인쇄",
-      type: ["1도/0도", "1도/1도", "4도/0도", "4도/4도"],
-      options: ["동양인쇄", "114 프린팅", "기타"],
-    },
-  ];
-
-  // 후가공 옵션
-  const postProcessingOptions = [
-    {
-      category: "코팅",
-      type: ["단면무광", "양면무광", "단면유광", "양면유광"],
-      options: ["자체코팅", "외부코팅", "기타"],
-    },
-    {
-      category: "박",
-      type: ["금박", "은박", "홀로그램박", "기타"],
-      options: ["신화사금박", "기타"],
-    },
-    {
-      category: "목형",
-      type: ["목형"],
-      options: ["자체목형", "외부목형", "V컷코팅", "기타"],
     },
   ];
 
@@ -218,6 +299,22 @@ export default function TaskCreate() {
           (item) => item.process_category !== "인쇄"
         );
 
+        // DB에서 해당 회사의 전화번호 찾기
+        let companyTel = ""; // 기본값을 빈 문자열로 변경
+        if (optionsData) {
+          const option = optionsData.find(
+            (opt) => opt.OPTION_TITLE === category
+          );
+          if (option) {
+            const company = option.tb_task_option_company.find(
+              (comp) => comp.COMPANY_NAME === value
+            );
+            if (company && company.COMPANY_TEL) {
+              companyTel = company.COMPANY_TEL;
+            }
+          }
+        }
+
         // 새로운 인쇄 항목 추가
         return [
           ...filteredOrder,
@@ -226,8 +323,8 @@ export default function TaskCreate() {
             process_category: "인쇄",
             process_type: `${category}(${type})`,
             process_company: value,
-            process_company_tel: "02-1234-5678",
-            process_stauts: "미완료" as const,
+            process_company_tel: companyTel,
+            process_status: "미완료" as const,
             process_memo: "",
             order: filteredOrder.length,
           },
@@ -260,11 +357,26 @@ export default function TaskCreate() {
             )
         );
       } else {
-        // 같은 카테고리-타입 조합의 기존 항목들 제거
+        // 같은 카테고리의 모든 기존 항목들 제거 (1가지만 선택 가능)
         const filteredOrder = prevOrder.filter(
-          (item) =>
-            !(item.process_category === category && item.process_type === type)
+          (item) => item.process_category !== category
         );
+
+        // DB에서 해당 회사의 전화번호 찾기
+        let companyTel = ""; // 기본값을 빈 문자열로 변경
+        if (optionsData) {
+          const optionData = optionsData.find(
+            (opt) => opt.OPTION_TITLE === category
+          );
+          if (optionData) {
+            const company = optionData.tb_task_option_company.find(
+              (comp) => comp.COMPANY_NAME === option
+            );
+            if (company && company.COMPANY_TEL) {
+              companyTel = company.COMPANY_TEL;
+            }
+          }
+        }
 
         // 새로운 항목 추가
         return [
@@ -274,8 +386,8 @@ export default function TaskCreate() {
             process_category: category,
             process_type: type,
             process_company: option,
-            process_company_tel: "02-1234-5678",
-            process_stauts: "미완료" as const,
+            process_company_tel: companyTel,
+            process_status: "미완료" as const,
             process_memo: "",
             order: filteredOrder.length,
           },
@@ -306,7 +418,7 @@ export default function TaskCreate() {
       process_type: string;
       process_company: string;
       process_company_tel: string;
-      process_stauts: "완료" | "진행중" | "미완료";
+      process_status: "완료" | "진행중" | "미완료";
       process_memo: string;
       order: number;
     };
@@ -418,14 +530,16 @@ export default function TaskCreate() {
       return;
     }
 
-    // sampleData.json 형식에 맞춘 최종 데이터
-    const finalData = {
-      id: Date.now(),
-      task_title: formData.task_title,
-      task_company: formData.task_company,
-      task_progressing: "대기",
-      task_priority: formData.task_priority,
-      task_detail: {
+    // DB 형식에 맞춘 최종 데이터
+    const finalData: CreateTaskDto = {
+      adminKey: "tk", // 실제로는 로그인된 사용자의 adminKey 사용
+      taskTitle: formData.task_title,
+      taskCompany: formData.task_company,
+      taskPriority: formData.task_priority,
+      taskProgressing: "진행중",
+      taskOrderDate: new Date(formData.task_order_date),
+      taskDeliveryDate: new Date(formData.task_delivery_date),
+      taskDetail: {
         delivery_type: formData.delivery_type,
         task_desc: formData.task_desc,
         paper_size: formData.paper_size,
@@ -436,23 +550,16 @@ export default function TaskCreate() {
           process_type: item.process_type,
           process_company: item.process_company,
           process_company_tel: item.process_company_tel,
-          process_stauts: item.process_stauts,
+          process_status: item.process_status,
           process_memo: item.process_memo,
         })),
       },
-      task_order_date: formatDate(formData.task_order_date),
-      task_delivery_date: formatDate(formData.task_delivery_date),
     };
 
-    // 작업 생성 로직 (여기에 실제 저장 로직 추가)
-    console.log("생성된 작업 데이터:", finalData);
-    console.log(
-      "공정 순서 JSON:",
-      JSON.stringify(finalData.task_detail.process, null, 2)
-    );
-    Alert.alert("성공", "작업이 생성되었습니다.", [
-      { text: "확인", onPress: () => router.back() },
-    ]);
+    console.log("finalData", finalData);
+
+    // API 호출
+    createTaskMutation.mutate(finalData);
   };
 
   const formatDate = (date: Date) => {
@@ -460,6 +567,16 @@ export default function TaskCreate() {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}년 ${month}월 ${day}일`;
+  };
+
+  const formatDateForDB = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   };
 
   // iOS용 DatePicker 열기 핸들러
@@ -484,6 +601,7 @@ export default function TaskCreate() {
       category: string;
       type: string[];
       options: string[];
+      optionKey: string;
     };
     processOrder: Array<{
       id: string;
@@ -491,7 +609,7 @@ export default function TaskCreate() {
       process_type: string;
       process_company: string;
       process_company_tel: string;
-      process_stauts: "완료" | "진행중" | "미완료";
+      process_status: "완료" | "진행중" | "미완료";
       process_memo: string;
       order: number;
     }>;
@@ -604,6 +722,7 @@ export default function TaskCreate() {
       category: string;
       type: string[];
       options: string[];
+      optionKey: string;
     };
     formData: any;
     onInputChange: (
@@ -885,7 +1004,7 @@ export default function TaskCreate() {
                 style={styles.textInput}
                 value={formData.paper_size}
                 onChangeText={(value) => handleInputChange("paper_size", value)}
-                placeholder="원단사이즈를 입력하세요"
+                placeholder="315*467"
               />
             </View>
           </View>
@@ -905,7 +1024,7 @@ export default function TaskCreate() {
                 onChangeText={(value) =>
                   handleInputChange("product_size", value)
                 }
-                placeholder="개별 사이즈를 입력하세요"
+                placeholder="210*297"
               />
             </View>
           </View>
@@ -923,7 +1042,7 @@ export default function TaskCreate() {
                 style={styles.textInput}
                 value={formData.paper_type}
                 onChangeText={(value) => handleInputChange("paper_type", value)}
-                placeholder="용지를 입력하세요"
+                placeholder="아르떼 230g"
               />
             </View>
           </View>
@@ -938,6 +1057,7 @@ export default function TaskCreate() {
             <TouchableOpacity
               style={styles.inputWrapper}
               onPress={handleOpenPrintingModal}
+              disabled={optionsLoading}
             >
               <Ionicons
                 name="print-outline"
@@ -951,7 +1071,9 @@ export default function TaskCreate() {
                   !formData.printing && styles.placeholderText,
                 ]}
               >
-                인쇄 방식을 선택하세요
+                {optionsLoading
+                  ? "옵션을 불러오는 중..."
+                  : "인쇄 방식을 선택하세요"}
               </Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
@@ -1024,8 +1146,17 @@ export default function TaskCreate() {
 
         {/* 저장 버튼 */}
         <View style={styles.Card}>
-          <TouchableOpacity onPress={handleSubmit} style={styles.submitButton}>
-            <Text style={styles.submitButtonText}>작업 생성</Text>
+          <TouchableOpacity
+            onPress={handleSubmit}
+            style={[
+              styles.submitButton,
+              createTaskMutation.isPending && styles.submitButtonDisabled,
+            ]}
+            disabled={createTaskMutation.isPending}
+          >
+            <Text style={styles.submitButtonText}>
+              {createTaskMutation.isPending ? "생성 중..." : "작업 생성"}
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAwareScrollView>
@@ -1304,14 +1435,28 @@ export default function TaskCreate() {
                     nestedScrollEnabled={true}
                     style={{ flex: 1 }}
                   >
-                    {printingMethodOptions.map((item) => (
-                      <PrintingAccordion
-                        key={item.category}
-                        item={item}
-                        formData={formData}
-                        onInputChange={handleInputChange}
-                      />
-                    ))}
+                    {optionsLoading ? (
+                      <View style={styles.loadingContainer}>
+                        <Text style={styles.loadingText}>
+                          옵션을 불러오는 중...
+                        </Text>
+                      </View>
+                    ) : printingMethodOptions.length > 0 ? (
+                      printingMethodOptions.map((item) => (
+                        <PrintingAccordion
+                          key={item.category}
+                          item={item}
+                          formData={formData}
+                          onInputChange={handleInputChange}
+                        />
+                      ))
+                    ) : (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>
+                          사용 가능한 인쇄 옵션이 없습니다.
+                        </Text>
+                      </View>
+                    )}
                   </KeyboardAwareScrollView>
                 </View>
                 {/* 확인 버튼 */}
@@ -1358,14 +1503,28 @@ export default function TaskCreate() {
                     nestedScrollEnabled={true}
                     style={{ flex: 1 }}
                   >
-                    {postProcessingOptions.map((item) => (
-                      <PostProcessingAccordion
-                        key={item.category}
-                        item={item}
-                        processOrder={processOrder}
-                        onPostProcessingChange={handlePostProcessingChange}
-                      />
-                    ))}
+                    {optionsLoading ? (
+                      <View style={styles.loadingContainer}>
+                        <Text style={styles.loadingText}>
+                          옵션을 불러오는 중...
+                        </Text>
+                      </View>
+                    ) : postProcessingOptions.length > 0 ? (
+                      postProcessingOptions.map((item) => (
+                        <PostProcessingAccordion
+                          key={item.category}
+                          item={item}
+                          processOrder={processOrder}
+                          onPostProcessingChange={handlePostProcessingChange}
+                        />
+                      ))
+                    ) : (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>
+                          사용 가능한 후가공 옵션이 없습니다.
+                        </Text>
+                      </View>
+                    )}
                   </KeyboardAwareScrollView>
                 </View>
                 {/* 확인 버튼 */}
@@ -1487,6 +1646,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  submitButtonDisabled: {
+    backgroundColor: "#ccc",
+    opacity: 0.7,
   },
   // --- iOS DatePicker Modal Styles ---
   modalBackdrop: {
@@ -1780,5 +1943,26 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 8,
     paddingHorizontal: 10,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
   },
 });

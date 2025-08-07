@@ -13,7 +13,7 @@
           "process_type": "114 프린팅",
           "process_company": "내부인쇄",
           "process_company_tel": "02-1234-5678",
-          "process_stauts": "미완료",
+          "process_status": "미완료",
           "process_memo": ""
         },
         {
@@ -21,7 +21,7 @@
           "process_type": "외부코팅",
           "process_company": "외부업체",
           "process_company_tel": "02-1234-5678",
-          "process_stauts": "미완료",
+          "process_status": "미완료",
           "process_memo": ""
         },
         {
@@ -29,7 +29,7 @@
           "process_type": "외부목형",
           "process_company": "외부업체",
           "process_company_tel": "02-1234-5678",
-          "process_stauts": "미완료",
+          "process_status": "미완료",
           "process_memo": ""
         },
         {
@@ -37,7 +37,7 @@
           "process_type": "기타",
           "process_company": "외부업체",
           "process_company_tel": "02-1234-5678",
-          "process_stauts": "미완료",
+          "process_status": "미완료",
           "process_memo": ""
         }
       ],
