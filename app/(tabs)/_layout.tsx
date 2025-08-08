@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { AntDesign, FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Tabs } from "expo-router";
 import React from "react";
@@ -6,17 +6,18 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAuth } from "@/stores/authStore";
 
 // 앱바 컴포넌트
 function AppBar() {
   const insets = useSafeAreaInsets();
-
+  const { user } = useAuth();
   return (
     <LinearGradient
       colors={["#667eea", "#764ba2"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.appBar, { paddingTop: insets.top + 12 }]}
+      style={[styles.appBar, { paddingTop: insets.top }]}
     >
       <View style={styles.appBarLeft}>
         <View style={styles.profileImageContainer}>
@@ -28,8 +29,8 @@ function AppBar() {
           </LinearGradient>
         </View>
         <View>
-          <Text style={styles.profileName}>김태균</Text>
-          <Text style={styles.profileRole}>대리</Text>
+          <Text style={styles.profileName}>{user?.name}</Text>
+          <Text style={styles.profileRole}>관리자</Text>
         </View>
       </View>
       <View style={styles.appBarRight}>
@@ -72,6 +73,12 @@ export default function TabLayout() {
           tabBarBackground: () => <View style={styles.tabBarBackground} />,
           tabBarButton: (props) => <CustomTabButton {...props} />,
           tabBarLabelStyle: styles.tabBarLabel,
+          tabBarLabelPosition: "below-icon",
+          tabBarItemStyle: {
+            minWidth: 90,
+            alignItems: "center",
+            justifyContent: "center",
+          },
           tabBarHideOnKeyboard: true,
         }}
       >
@@ -96,11 +103,7 @@ export default function TabLayout() {
             title: "작업상세",
             tabBarIcon: ({ color, focused }) => (
               <View style={styles.iconContainer}>
-                <Ionicons
-                  name={focused ? "document-text" : "document-text-outline"}
-                  size={24}
-                  color={color}
-                />
+                <FontAwesome5 name="tasks" size={24} color={color} />
               </View>
             ),
           }}
@@ -111,11 +114,7 @@ export default function TabLayout() {
             title: "작업등록",
             tabBarIcon: ({ color, focused }) => (
               <View style={styles.iconContainer}>
-                <Ionicons
-                  name={focused ? "add-circle" : "add-circle-outline"}
-                  size={24}
-                  color={color}
-                />
+                <AntDesign name="form" size={24} color={color} />
               </View>
             ),
           }}
@@ -150,9 +149,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+    paddingBottom: 15,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -248,9 +247,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   tabButton: {
-    width: 40,
+    minWidth: 60,
+
     height: 40,
     borderRadius: 20,
+    paddingHorizontal: 8,
+    display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -263,7 +266,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
     width: 40,
-    height: 40,
+    minHeight: 20,
+    flexDirection: "row",
+    gap: 6,
   },
   activeIndicator: {
     position: "absolute",
@@ -276,6 +281,8 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontSize: 11,
     fontWeight: "600",
+    textAlign: "center",
+    width: "100%",
     marginTop: 2,
   },
 });

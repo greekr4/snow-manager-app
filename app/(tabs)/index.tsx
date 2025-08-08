@@ -1,12 +1,20 @@
 import { TabBarMargin } from "@/components/global/TabBarMargin";
 import { useTaskStore } from "@/stores/taskStore";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useState } from "react";
 import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import axios from "axios";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
-  ScrollView,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -14,78 +22,211 @@ import {
   View,
 } from "react-native";
 
-// 오늘의 인쇄 작업 목업(mockup) 데이터
-const todayJobsData = [
-  {
-    id: 1,
-    title: "브로슈어",
-    client: "피앤제이",
-    status: "진행중",
-    priority: "긴급",
-    details: ["인쇄", "톰슨", "귀도리", "코팅"],
-    time: "25-07-28 13:00",
-    time2: "25-07-29 13:00",
-  },
-  {
-    id: 2,
-    title: "명함",
-    client: "피앤제이",
-    status: "완료",
-    priority: "보통",
-    details: ["인쇄", "귀도리", "코팅"],
-    time: "25-07-28 12:00",
-    time2: "25-07-29 12:00",
-  },
-];
+// 타입 정의 - DB 스키마에 맞게 수정
+interface ProcessItem {
+  process_category: string;
+  process_type: string;
+  process_company: string;
+  process_company_tel: string;
+  process_status: string;
+  process_memo: string;
+}
+
+interface TaskDetail {
+  delivery_type: string;
+  task_desc: string;
+  paper_size: string;
+  product_size: string;
+  paper_type: string;
+  process: ProcessItem[];
+}
+
+interface JobData {
+  TASK_KEY: string;
+  ADMIN_KEY: string;
+  TASK_TITLE: string;
+  TASK_COMPANY: string;
+  TASK_PRIORITY: string;
+  TASK_PROGRESSING: string;
+  TASK_ORDER_DATE: string;
+  TASK_DELIVERY_DATE: string;
+  TASK_DETAIL: string; // JSON 문자열
+  CREATED_AT: string;
+  UPDATED_AT: string;
+}
+
+interface PaginatedResponse {
+  data: JobData[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+}
+
+// API 함수들
+const fetchTasks = async ({
+  pageParam = 1,
+  status = "",
+}): Promise<PaginatedResponse> => {
+  // 일시적으로 서버 필터링 비활성화 (서버에서 제대로 필터링이 안 되므로)
+  let url = `http://210.114.18.110:3333/tasks?page=${pageParam}&limit=10`;
+
+  // TODO: 서버에서 필터링이 제대로 작동하면 아래 주석 해제
+  // if (status && status !== "전체") {
+  //   url += `&status=${encodeURIComponent(status)}`;
+  // }
+
+  const response = await axios.get(url);
+  return response.data;
+};
+
+// 개수만 가져오는 API
+const fetchTaskCounts = async () => {
+  const response = await axios.get("http://210.114.18.110:3333/tasks/count");
+  return response.data;
+};
 
 export default function HomeScreen() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [newJobTitle, setNewJobTitle] = useState("");
   const [newJobClient, setNewJobClient] = useState("");
-  const [todayJobs, setTodayJobs] = useState(todayJobsData);
   const [selectedTab, setSelectedTab] = useState("전체");
 
   const router = useRouter();
   const { setSelectedTask } = useTaskStore();
+  const queryClient = useQueryClient();
+
+  // 개수 전용 쿼리
+  const { data: taskCounts, refetch: refetchCounts } = useQuery({
+    queryKey: ["tasks-count"],
+    queryFn: fetchTaskCounts,
+    staleTime: 1000 * 60 * 5, // 5분
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // React Query Infinite Query로 데이터 페칭 (클라이언트 필터링 사용)
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    refetch,
+    isLoading,
+  } = useInfiniteQuery({
+    queryKey: ["tasks"], // selectedTab 제거 (클라이언트 필터링 사용)
+    queryFn: ({ pageParam = 1 }) =>
+      fetchTasks({ pageParam, status: selectedTab }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      return lastPage.pagination.hasNextPage
+        ? lastPage.pagination.page + 1
+        : undefined;
+    },
+    staleTime: 1000 * 60 * 2, // 2분
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // 모든 페이지의 데이터를 하나의 배열로 평탄화 (안전한 처리)
+  const allJobs = React.useMemo(() => {
+    try {
+      if (!data || !data.pages) {
+        console.log(`[${selectedTab}] 데이터가 없습니다:`, data);
+        return [];
+      }
+
+      const jobs = data.pages.flatMap((page) => {
+        if (!page || !Array.isArray(page.data)) {
+          console.log(`[${selectedTab}] 잘못된 페이지 데이터:`, page);
+          return [];
+        }
+        return page.data;
+      });
+
+      // 중복된 TASK_KEY 제거 (무한 스크롤에서 발생할 수 있는 중복 방지)
+      const uniqueJobs = jobs.filter((job, index, self) => {
+        if (!job?.TASK_KEY) return true; // TASK_KEY가 없는 경우는 유지
+        return index === self.findIndex((j) => j?.TASK_KEY === job.TASK_KEY);
+      });
+
+      console.log(`[${selectedTab}] 서버에서 받은 총 작업 수:`, jobs.length);
+      console.log(`[${selectedTab}] 중복 제거 후 작업 수:`, uniqueJobs.length);
+
+      return uniqueJobs;
+    } catch (error) {
+      console.error(`[${selectedTab}] allJobs 생성 오류:`, error);
+    }
+  }, [data, selectedTab]);
+
+  // 클라이언트 사이드 필터링 (서버 필터링이 제대로 안 될 때를 대비)
+  const filteredJobs = React.useMemo(() => {
+    try {
+      if (!Array.isArray(allJobs)) {
+        console.log(`[${selectedTab}] allJobs가 배열이 아닙니다:`, allJobs);
+        return [];
+      }
+
+      let filtered;
+      if (selectedTab === "전체") {
+        filtered = allJobs;
+      } else {
+        filtered = allJobs.filter((job: any) => {
+          if (!job) return false;
+          return job.TASK_PROGRESSING === selectedTab;
+        });
+      }
+
+      console.log(
+        `[${selectedTab}] 클라이언트 필터링 후 작업 수:`,
+        filtered.length
+      );
+
+      // 필터링된 결과의 첫 번째 작업 상태 확인
+      if (filtered.length > 0) {
+        const firstFilteredJobStatus = filtered[0].TASK_PROGRESSING;
+        console.log(
+          `[${selectedTab}] 필터링 후 첫 번째 작업 상태:`,
+          firstFilteredJobStatus
+        );
+      }
+
+      return filtered;
+    } catch (error) {
+      console.error(`[${selectedTab}] 필터링 오류:`, error);
+      return [];
+    }
+  }, [allJobs, selectedTab]);
+
+  // 탭 포커스시 데이터 리페치
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      refetchCounts();
+    }, [refetch, refetchCounts])
+  );
+
+  // 수동 새로고침
+  const handleRefresh = useCallback(() => {
+    refetch();
+    refetchCounts(); // 개수도 함께 새로고침
+  }, [refetch, refetchCounts]);
+
+  // 무한스크롤 로드 더보기
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleDetailView = (job: any) => {
     setSelectedTask(job);
     router.push("/(tabs)/taskDetail");
-  };
-
-  const handleAddJob = () => {
-    if (!newJobTitle || !newJobClient) {
-      Alert.alert("입력 오류", "작업명과 고객명을 모두 입력해주세요.");
-      return;
-    }
-    const newJob = {
-      id: Date.now(),
-      title: newJobTitle,
-      client: newJobClient,
-      status: "대기", // 새 작업은 '대기' 상태로 시작
-      priority: "보통", // 기본 우선순위
-      details: [], // 초기에는 세부 사항 없음
-      time: new Date().toLocaleString("ko-KR", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }),
-      time2: new Date().toLocaleString("ko-KR", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }),
-    };
-    setTodayJobs([newJob, ...todayJobs]);
-    setNewJobTitle("");
-    setNewJobClient("");
-    setModalVisible(false);
   };
 
   const handleMenuPress = (id: any) => {
@@ -96,200 +237,348 @@ export default function HomeScreen() {
     }
   };
 
-  const filteredJobs = todayJobs.filter((job) => {
-    if (selectedTab === "전체") {
-      return true;
-    } else if (selectedTab === "진행중") {
-      return job.status === "진행중";
-    } else if (selectedTab === "완료") {
-      return job.status === "완료";
+  // 탭 선택 시 처리 - 개선된 버전
+  const handleTabChange = useCallback(
+    (tab: string) => {
+      console.log(`탭 변경: ${selectedTab} -> ${tab}`);
+      setSelectedTab(tab);
+      // selectedTab이 queryKey에 포함되어 있으므로 자동으로 새로운 데이터 페칭
+    },
+    [selectedTab]
+  );
+
+  // 탭별 개수 가져오기
+  const getTabCount = useCallback(
+    (tab: string) => {
+      if (!taskCounts) return 0;
+
+      switch (tab) {
+        case "전체":
+          return taskCounts.total || 0;
+        case "진행중":
+          return taskCounts.진행중 || 0;
+        case "완료":
+          return taskCounts.완료 || 0;
+        default:
+          return 0;
+      }
+    },
+    [taskCounts]
+  );
+
+  // TASK_DETAIL JSON 파싱 헬퍼 함수
+  const parseTaskDetail = (taskDetailString: string): TaskDetail => {
+    try {
+      // 이미 객체인 경우 바로 반환
+      if (typeof taskDetailString === "object" && taskDetailString !== null) {
+        return taskDetailString as TaskDetail;
+      }
+
+      // 문자열이 아닌 경우 기본값 반환
+      if (typeof taskDetailString !== "string") {
+        return {
+          delivery_type: "",
+          task_desc: "",
+          paper_size: "",
+          product_size: "",
+          paper_type: "",
+          process: [],
+        };
+      }
+
+      // 빈 문자열이거나 null/undefined인 경우
+      if (!taskDetailString || taskDetailString.trim() === "") {
+        return {
+          delivery_type: "",
+          task_desc: "",
+          paper_size: "",
+          product_size: "",
+          paper_type: "",
+          process: [],
+        };
+      }
+
+      const parsed = JSON.parse(taskDetailString);
+      return parsed;
+    } catch (error) {
+      console.error("TASK_DETAIL 파싱 오류:", error);
+      return {
+        delivery_type: "",
+        task_desc: "",
+        paper_size: "",
+        product_size: "",
+        paper_type: "",
+        process: [],
+      };
     }
-    return true;
-  });
+  };
 
-  return (
-    <View style={styles.rootContainer}>
-      <ScrollView style={styles.container}>
-        {/* --- 작업 생성하기 버튼 --- */}
-        {/* <TouchableOpacity
-          style={styles.createJobButton}
-          onPress={() => handleMenuPress("new_job")}
-        >
-          <Text style={styles.createJobButtonText}>작업 생성하기</Text>
-        </TouchableOpacity> */}
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  };
 
-        {/* --- 상단 탭 메뉴 --- */}
-        <View style={styles.tabBarContainer}>
-          <View style={styles.tabBar}>
-            {["전체", "진행중", "완료"].map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[
-                  styles.tabItem,
-                  selectedTab === tab && styles.tabItemActive,
-                ]}
-                onPress={() => setSelectedTab(tab)}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    selectedTab === tab && styles.tabTextActive,
-                  ]}
-                >
-                  {tab}
-                </Text>
-                <View
-                  style={[
-                    styles.tabBadge,
-                    selectedTab === tab && styles.tabBadgeActive,
-                  ]}
-                >
-                  <Text style={styles.tabBadgeText}>2</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+  // FlatList 아이템 렌더링
+  const renderJobItem = ({ item: job }: { item: any }) => {
+    if (!job) {
+      console.log("renderJobItem: job이 null/undefined입니다");
+      return null;
+    }
+
+    const taskDetail = parseTaskDetail(job.TASK_DETAIL);
+    return (
+      <View style={styles.jobCard}>
+        <View style={styles.jobCardHeader}>
+          <Text style={styles.jobTitle}>{job.TASK_TITLE || "제목 없음"}</Text>
+          <View style={styles.jobClientContainer}>
+            <Ionicons name="business-outline" size={16} color="#999" />
+            <Text style={styles.clientText}>
+              {job.TASK_COMPANY || "고객명 없음"}
+            </Text>
           </View>
-          <View style={styles.tabIndicator} />
+        </View>
+        <View style={styles.statusAndPriority}>
+          <Text style={getPriorityStyle(job.TASK_PRIORITY || "보통")}>
+            {job.TASK_PRIORITY || "보통"}
+          </Text>
+          <Text style={getStatusStyle(job.TASK_PROGRESSING || "대기")}>
+            {job.TASK_PROGRESSING || "대기"}
+          </Text>
+        </View>
+        <View style={styles.detailsContainer}>
+          {(taskDetail.process || []).map((process: any, index: any) => (
+            <Text
+              key={`${job.TASK_KEY}-detail-${index}`}
+              style={[
+                styles.detailTag,
+                process.process_status === "완료" && styles.detailTagActive,
+              ]}
+            >
+              {process.process_category || "카테고리 없음"}
+            </Text>
+          ))}
         </View>
 
-        {/* --- 오늘의 작업 목록 --- */}
-        <View style={styles.section}>
-          <View style={styles.jobCardContainer}>
-            {filteredJobs.map((job) => (
-              <View key={job.id} style={styles.jobCard}>
-                <View style={styles.jobCardHeader}>
-                  <Text style={styles.jobTitle}>{job.title}</Text>
-                  <View style={styles.jobClientContainer}>
-                    <Ionicons name="business-outline" size={16} color="#999" />
-                    <Text style={styles.clientText}>{job.client}</Text>
-                  </View>
-                </View>
-                <View style={styles.statusAndPriority}>
-                  <Text style={getPriorityStyle(job.priority)}>
-                    {job.priority}
-                  </Text>
-                  <Text style={getStatusStyle(job.status)}>{job.status}</Text>
-                </View>
-                <View style={styles.detailsContainer}>
-                  {job.details.map((detail, index) => (
-                    <Text key={index} style={styles.detailTag}>
-                      {detail}
-                    </Text>
-                  ))}
-                  {job.details.length > 3 && (
-                    <Text style={styles.detailTag}>
-                      +{job.details.length - 3}
-                    </Text>
-                  )}
-                </View>
-
-                {/* 타임라인 섹션 */}
-                <View style={styles.timelineContainer}>
-                  <Text style={styles.timelineTitle}>진행 상황</Text>
-                  <View style={styles.timeline}>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>인쇄</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          스노우화이트
-                        </Text>
-                        <Text style={styles.timelineTime}>07-28</Text>
-                      </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>코팅</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          우신코팅
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-28
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View
-                        style={[styles.timelineDot, styles.timelineDotActive]}
-                      />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>금박</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          신화사금박
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-29
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.timelineItem}>
-                      <View style={[styles.timelineDot]} />
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineText}>출고</Text>
-                        <Text
-                          style={styles.timelineCompany}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          CJ대한통운
-                        </Text>
-                        <Text
-                          style={styles.timelineTime}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          07-29
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.jobCardFooter}>
-                  <View>
-                    <Text style={styles.jobTime}>발주일: {job.time}</Text>
-                    <Text style={styles.jobTime}>납품일: {job.time2}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.detailButton}
-                    onPress={() => handleDetailView(job)}
+        {/* 타임라인 섹션 */}
+        <View style={styles.timelineContainer}>
+          <Text style={styles.timelineTitle}>진행 상황</Text>
+          <View style={styles.timeline}>
+            {(taskDetail.process || []).map((process: any, index: any) => (
+              <View
+                key={`${job.TASK_KEY}-timeline-${index}`}
+                style={styles.timelineItem}
+              >
+                <View
+                  style={[
+                    styles.timelineDot,
+                    process.process_status === "완료" &&
+                      styles.timelineDotActive,
+                  ]}
+                />
+                <View style={styles.timelineContent}>
+                  <Text
+                    style={styles.timelineText}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
-                    <Text style={styles.detailButtonText}>상세보기</Text>
-                  </TouchableOpacity>
+                    {process.process_category || "카테고리 없음"}
+                  </Text>
+                  <Text
+                    style={styles.timelineCompany}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {process.process_company || "업체 없음"}
+                  </Text>
                 </View>
               </View>
             ))}
           </View>
         </View>
 
-        {/* 탭바 높이만큼 하단 마진 */}
-        <TabBarMargin />
-      </ScrollView>
+        <View style={styles.jobCardFooter}>
+          <View>
+            <Text style={styles.jobTime}>
+              발주일:{" "}
+              {job.TASK_ORDER_DATE
+                ? formatDate(job.TASK_ORDER_DATE)
+                : "날짜 없음"}
+            </Text>
+            <Text style={styles.jobTime}>
+              납품일:{" "}
+              {job.TASK_DELIVERY_DATE
+                ? formatDate(job.TASK_DELIVERY_DATE)
+                : "날짜 없음"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.detailButton}
+            onPress={() => handleDetailView(job)}
+          >
+            <Text style={styles.detailButtonText}>상세보기</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  // FlatList 하단 로딩 인디케이터
+  const renderFooter = () => {
+    if (!isFetchingNextPage) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#007AFF" />
+        <Text style={styles.footerLoaderText}>
+          더 많은 작업을 불러오는 중...
+        </Text>
+      </View>
+    );
+  };
+
+  // FlatList 헤더 (탭 메뉴)
+  const renderHeader = () => (
+    <>
+      {/* --- 상단 헤더 --- */}
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitle}>작업 관리</Text>
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={handleRefresh}
+          disabled={isFetching}
+        >
+          <Ionicons
+            name="refresh"
+            size={24}
+            color={isFetching ? "#999" : "#007AFF"}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* --- 상단 탭 메뉴 --- */}
+      <View style={styles.tabBarContainer}>
+        <View style={styles.tabBar}>
+          {["전체", "진행중", "완료"].map((tab, index) => (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.tabItem,
+                selectedTab === tab && styles.tabItemActive,
+              ]}
+              onPress={() => handleTabChange(tab)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  selectedTab === tab && styles.tabTextActive,
+                ]}
+              >
+                {tab}
+              </Text>
+              <View
+                style={[
+                  styles.tabBadge,
+                  selectedTab === tab && styles.tabBadgeActive,
+                ]}
+              >
+                <Text style={styles.tabBadgeText}>{getTabCount(tab)}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View
+          style={[
+            styles.tabIndicator,
+            {
+              left:
+                selectedTab === "전체"
+                  ? "0%"
+                  : selectedTab === "진행중"
+                  ? "33.33%"
+                  : "66.66%",
+            },
+          ]}
+        />
+      </View>
+    </>
+  );
+
+  if (isLoading) {
+    return (
+      <View
+        style={[
+          styles.rootContainer,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ marginTop: 10, color: "#666" }}>
+          데이터를 불러오는 중...
+        </Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View
+        style={[
+          styles.rootContainer,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <Ionicons name="alert-circle-outline" size={50} color="#FF6B6B" />
+        <Text style={{ marginTop: 10, color: "#666", textAlign: "center" }}>
+          데이터를 불러오는데 실패했습니다.
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+          <Text style={styles.retryButtonText}>다시 시도</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.rootContainer}>
+      <FlatList
+        data={Array.isArray(filteredJobs) ? filteredJobs : []}
+        renderItem={renderJobItem}
+        keyExtractor={(item, index) => item?.TASK_KEY || `job-${index}`}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.1}
+        refreshControl={
+          <RefreshControl
+            refreshing={isFetching && !isFetchingNextPage}
+            onRefresh={handleRefresh}
+            colors={["#007AFF"]}
+            tintColor="#007AFF"
+          />
+        }
+        contentContainerStyle={styles.flatListContainer}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        extraData={selectedTab} // 탭 변경시 FlatList 리렌더링 강제
+        ListEmptyComponent={() =>
+          !isLoading ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="document-outline" size={50} color="#ccc" />
+              <Text style={styles.emptyText}>
+                {selectedTab} 작업이 없습니다.
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+
+      {/* 탭바 높이만큼 하단 마진 */}
+      <TabBarMargin />
 
       {/* --- 새 작업 등록 팝업(Modal) --- */}
       <Modal
@@ -324,7 +613,10 @@ export default function HomeScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.submitButton]}
-                onPress={handleAddJob}
+                onPress={() => {
+                  setModalVisible(false);
+                  Alert.alert("알림", "작업 생성 페이지로 이동해주세요.");
+                }}
               >
                 <Text style={styles.buttonText}>등록</Text>
               </TouchableOpacity>
@@ -337,7 +629,7 @@ export default function HomeScreen() {
 }
 
 // 상태에 따른 스타일 반환 함수
-const getStatusStyle = (status: any) => {
+const getStatusStyle = (status: string) => {
   switch (status) {
     case "진행중":
       return [styles.statusTag, styles.statusInProgress];
@@ -351,7 +643,7 @@ const getStatusStyle = (status: any) => {
 };
 
 // 우선순위에 따른 스타일 반환 함수
-const getPriorityStyle = (priority: any) => {
+const getPriorityStyle = (priority: string) => {
   switch (priority) {
     case "긴급":
       return [styles.priorityTag, styles.priorityUrgent];
@@ -369,6 +661,34 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  refreshButton: {
+    padding: 8,
+  },
+  retryButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
   },
   todayTaskBanner: {
     backgroundColor: "#795FFC", // 보라색 계열
@@ -398,9 +718,9 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     backgroundColor: "#fff",
-    marginHorizontal: 20,
-    marginTop: 20,
+
     borderRadius: 10,
+    marginBottom: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -475,6 +795,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 4,
+    marginBottom: 15,
   },
   jobCardHeader: {
     flexDirection: "row",
@@ -553,6 +874,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#555",
     fontWeight: "500",
+  },
+  detailTagActive: {
+    backgroundColor: "#E8F5E9",
+    color: "#4CAF50",
   },
   jobCardFooter: {
     flexDirection: "row",
@@ -687,7 +1012,6 @@ const styles = StyleSheet.create({
   },
   timelineContainer: {
     paddingTop: 10,
-    marginTop: 15,
     marginBottom: 15,
   },
   timelineTitle: {
@@ -741,5 +1065,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#999",
     textAlign: "center",
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
+  footerLoaderText: {
+    color: "#007AFF",
+    fontSize: 14,
+    marginTop: 10,
+  },
+  flatListContainer: {
+    paddingBottom: 100, // 탭바 높이 + 안전 영역 고려
+    paddingHorizontal: 20, // 좌우 패딩 추가
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 50,
+  },
+  emptyText: {
+    marginTop: 10,
+    color: "#999",
+    fontSize: 16,
   },
 });
