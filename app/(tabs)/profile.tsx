@@ -1,7 +1,13 @@
 import { TabBarMargin } from "@/components/global/TabBarMargin";
 import { useAuth } from "@/stores/authStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -12,26 +18,93 @@ import {
   View,
 } from "react-native";
 
+const STORAGE_KEYS = {
+  notificationsEnabled: "settings.notificationsEnabled",
+  expoPushToken: "settings.expoPushToken",
+};
+
+// 알림 처리 기본 동작 설정 (포그라운드에서 알림 표시)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    // SDK 53 타입 호환 필드
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+async function registerForPushNotificationsAsync(): Promise<string | null> {
+  try {
+    if (!Device.isDevice) {
+      Alert.alert(
+        "알림",
+        "시뮬레이터/에뮬레이터에서는 푸시 토큰 발급이 제한될 수 있습니다."
+      );
+      return null;
+    }
+
+    const { status: existingStatus } =
+      await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== "granted") {
+      Alert.alert("권한 필요", "푸시 알림 권한이 거부되었습니다.");
+      return null;
+    }
+
+    // Expo Push Token 발급 (EAS 프로젝트인 경우 projectId 필요)
+    const PROJECT_ID =
+      (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
+      (Constants as any)?.easConfig?.projectId ||
+      (process as any)?.env?.EXPO_PUBLIC_EAS_PROJECT_ID;
+
+    const tokenResponse = await Notifications.getExpoPushTokenAsync(
+      PROJECT_ID ? { projectId: PROJECT_ID } : undefined
+    );
+    const token = tokenResponse.data;
+
+    await AsyncStorage.setItem(STORAGE_KEYS.expoPushToken, token);
+    return token;
+  } catch (error) {
+    console.error("푸시 권한/토큰 설정 오류:", error);
+    return null;
+  }
+}
+
 export default function ProfileScreen() {
-  const { user, logout, isLoading } = useAuth();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [vibrationEnabled, setVibrationEnabled] = useState(false);
+  const { user, logout, isLoading, updateUser } = useAuth();
+  const router = useRouter();
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(
+    user?.pushEnabled ?? true
+  );
+
+  // 초기 상태 동기화: DB의 pushEnabled 우선 반영, 없으면 로컬 스토리지 참고
+  useEffect(() => {
+    (async () => {
+      if (typeof user?.pushEnabled === "boolean") {
+        setNotificationsEnabled(!!user.pushEnabled);
+        return;
+      }
+      const n = await AsyncStorage.getItem(STORAGE_KEYS.notificationsEnabled);
+      if (n !== null) setNotificationsEnabled(n === "true");
+    })();
+  }, [user?.pushEnabled]);
 
   const handleLogout = async () => {
     Alert.alert("로그아웃", "정말 로그아웃하시겠습니까?", [
-      {
-        text: "취소",
-        style: "cancel",
-      },
+      { text: "취소", style: "cancel" },
       {
         text: "로그아웃",
         style: "destructive",
         onPress: async () => {
           try {
-            console.log("로그아웃 시작...");
             await logout();
-            console.log("로그아웃 완료");
+            // 루트 레이아웃에서 로그인 상태에 따라 라우팅 처리
           } catch (error) {
             console.error("로그아웃 실패:", error);
             Alert.alert("오류", "로그아웃에 실패했습니다.");
@@ -41,27 +114,69 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handleChangeProfilePhoto = () => {
-    Alert.alert("프로필 사진 변경", "프로필 사진을 변경하시겠습니까?", [
-      {
-        text: "취소",
-        style: "cancel",
-      },
-      {
-        text: "갤러리에서 선택",
-        onPress: () => {
-          // 갤러리에서 사진 선택 로직
-          console.log("갤러리에서 사진 선택");
+  const onToggleNotifications = async (value: boolean) => {
+    setNotificationsEnabled(value);
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.notificationsEnabled,
+      String(value)
+    );
+
+    try {
+      let tokenToUse: string | null = null;
+      if (value) {
+        const token = await registerForPushNotificationsAsync();
+        tokenToUse = token;
+        if (!token) {
+          Alert.alert("알림", "푸시 토큰 발급에 실패했습니다.");
+        }
+      }
+
+      // 서버에 현재 사용자 푸시 설정 업데이트
+      const adminKey = user?.adminKey || user?.id;
+      if (adminKey) {
+        await axios.patch(`http://210.114.18.110:3333/users/${adminKey}`, {
+          pushToken: value ? tokenToUse : null,
+          pushEnabled: value,
+        });
+        updateUser({
+          pushToken: value ? tokenToUse ?? null : null,
+          pushEnabled: value,
+        });
+      }
+    } catch (err) {
+      console.error("사용자 푸시 설정 업데이트 실패:", err);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    try {
+      if (!notificationsEnabled) {
+        Alert.alert("알림 비활성화", "알림 스위치를 먼저 켜주세요.");
+        return;
+      }
+
+      // 권한 확인/요청
+      const perms = await Notifications.getPermissionsAsync();
+      if (perms.status !== "granted") {
+        const req = await Notifications.requestPermissionsAsync();
+        if (req.status !== "granted") {
+          Alert.alert("권한 필요", "알림 권한이 필요합니다.");
+          return;
+        }
+      }
+
+      // 단순 로컬 알림 (사운드/진동 제어 제거)
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "푸시 알림 테스트",
+          body: "프로필 화면에서 발송된 테스트 알림입니다.",
         },
-      },
-      {
-        text: "카메라로 촬영",
-        onPress: () => {
-          // 카메라로 촬영 로직
-          console.log("카메라로 촬영");
-        },
-      },
-    ]);
+        trigger: null,
+      });
+    } catch (e) {
+      console.error("알림 테스트 오류:", e);
+      Alert.alert("오류", "알림을 표시하는 중 오류가 발생했습니다.");
+    }
   };
 
   return (
@@ -71,10 +186,7 @@ export default function ProfileScreen() {
         <Text style={styles.CardTitle}>프로필 정보</Text>
 
         <View style={styles.profileSection}>
-          <TouchableOpacity
-            onPress={handleChangeProfilePhoto}
-            style={styles.avatarContainer}
-          >
+          <TouchableOpacity onPress={() => {}} style={styles.avatarContainer}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {user?.name?.charAt(0) || user?.email?.charAt(0) || "김"}
@@ -86,8 +198,8 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <View style={styles.profileInfo}>
-            <Text style={styles.name}>김태균</Text>
-            <Text style={styles.position}>대리</Text>
+            <Text style={styles.name}>{user?.name}</Text>
+            <Text style={styles.position}>관리자</Text>
             <Text style={styles.email}>{user?.email}</Text>
           </View>
         </View>
@@ -99,7 +211,7 @@ export default function ProfileScreen() {
 
         <View style={styles.infoContainer}>
           <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>사용자 ID</Text>
+            <Text style={styles.infoLabel}>사용자 KEY</Text>
             <Text style={styles.infoValue}>{user?.id || "user123"}</Text>
           </View>
 
@@ -111,10 +223,10 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          <View style={styles.infoItem}>
+          {/* <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>가입일</Text>
             <Text style={styles.infoValue}>2024.01.15</Text>
-          </View>
+          </View> */}
         </View>
       </View>
 
@@ -135,46 +247,26 @@ export default function ProfileScreen() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={onToggleNotifications}
               trackColor={{ false: "#767577", true: "#007AFF" }}
               thumbColor={notificationsEnabled ? "#fff" : "#f4f3f4"}
             />
           </View>
 
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Ionicons
-                name="volume-high"
-                size={20}
-                color="#666"
-                style={styles.settingIcon}
-              />
-              <Text style={styles.settingLabel}>알림음</Text>
-            </View>
-            <Switch
-              value={soundEnabled}
-              onValueChange={setSoundEnabled}
-              trackColor={{ false: "#767577", true: "#007AFF" }}
-              thumbColor={soundEnabled ? "#fff" : "#f4f3f4"}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Ionicons
-                name="phone-portrait"
-                size={20}
-                color="#666"
-                style={styles.settingIcon}
-              />
-              <Text style={styles.settingLabel}>진동</Text>
-            </View>
-            <Switch
-              value={vibrationEnabled}
-              onValueChange={setVibrationEnabled}
-              trackColor={{ false: "#767577", true: "#007AFF" }}
-              thumbColor={vibrationEnabled ? "#fff" : "#f4f3f4"}
-            />
+          <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
+            <TouchableOpacity
+              onPress={handleTestNotification}
+              style={{
+                backgroundColor: "#007AFF",
+                paddingVertical: 10,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "600" }}>
+                푸시 알림 테스트
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -203,10 +295,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F0F2F5",
-  },
+  container: { flex: 1, backgroundColor: "#F0F2F5" },
   Card: {
     backgroundColor: "#fff",
     padding: 20,
@@ -225,14 +314,8 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 15,
   },
-  profileSection: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  avatarContainer: {
-    position: "relative",
-    marginRight: 20,
-  },
+  profileSection: { flexDirection: "row", alignItems: "center" },
+  avatarContainer: { position: "relative", marginRight: 20 },
   avatar: {
     width: 80,
     height: 80,
@@ -241,11 +324,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "white",
-  },
+  avatarText: { fontSize: 32, fontWeight: "bold", color: "white" },
   cameraIcon: {
     position: "absolute",
     bottom: 0,
@@ -259,48 +338,25 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  profileInfo: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 5,
-  },
+  profileInfo: { flex: 1 },
+  name: { fontSize: 24, fontWeight: "600", color: "#333", marginBottom: 5 },
   position: {
     fontSize: 16,
     color: "#007AFF",
     fontWeight: "500",
     marginBottom: 5,
   },
-  email: {
-    fontSize: 14,
-    color: "#666",
-  },
-  infoContainer: {
-    gap: 15,
-  },
+  email: { fontSize: 14, color: "#666" },
+  infoContainer: { gap: 15 },
   infoItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 8,
   },
-  infoLabel: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
-  },
-  infoValue: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
-  statusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  infoLabel: { fontSize: 14, color: "#666", fontWeight: "500" },
+  infoValue: { fontSize: 14, color: "#333", fontWeight: "500" },
+  statusContainer: { flexDirection: "row", alignItems: "center" },
   statusDot: {
     width: 8,
     height: 8,
@@ -308,32 +364,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#4CAF50",
     marginRight: 8,
   },
-  statusText: {
-    fontSize: 14,
-    color: "#4CAF50",
-    fontWeight: "500",
-  },
-  settingContainer: {
-    gap: 15,
-  },
+  statusText: { fontSize: 14, color: "#4CAF50", fontWeight: "500" },
+  settingContainer: { gap: 15 },
   settingItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 8,
   },
-  settingInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  settingIcon: {
-    marginRight: 12,
-  },
-  settingLabel: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
+  settingInfo: { flexDirection: "row", alignItems: "center" },
+  settingIcon: { marginRight: 12 },
+  settingLabel: { fontSize: 14, color: "#333", fontWeight: "500" },
   logoutButton: {
     backgroundColor: "#FF3B30",
     paddingVertical: 15,
@@ -343,15 +384,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  logoutIcon: {
-    marginRight: 8,
-  },
-  logoutButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
+  logoutIcon: { marginRight: 8 },
+  logoutButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
+  disabledButton: { opacity: 0.6 },
 });

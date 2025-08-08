@@ -72,7 +72,7 @@ const fetchTasks = async ({
   status = "",
 }): Promise<PaginatedResponse> => {
   // 일시적으로 서버 필터링 비활성화 (서버에서 제대로 필터링이 안 되므로)
-  let url = `http://192.168.0.4:3000/tasks?page=${pageParam}&limit=10`;
+  let url = `http://210.114.18.110:3333/tasks?page=${pageParam}&limit=10`;
 
   // TODO: 서버에서 필터링이 제대로 작동하면 아래 주석 해제
   // if (status && status !== "전체") {
@@ -85,7 +85,7 @@ const fetchTasks = async ({
 
 // 개수만 가져오는 API
 const fetchTaskCounts = async () => {
-  const response = await axios.get("http://192.168.0.4:3000/tasks/count");
+  const response = await axios.get("http://210.114.18.110:3333/tasks/count");
   return response.data;
 };
 
@@ -149,18 +149,18 @@ export default function HomeScreen() {
         return page.data;
       });
 
+      // 중복된 TASK_KEY 제거 (무한 스크롤에서 발생할 수 있는 중복 방지)
+      const uniqueJobs = jobs.filter((job, index, self) => {
+        if (!job?.TASK_KEY) return true; // TASK_KEY가 없는 경우는 유지
+        return index === self.findIndex((j) => j?.TASK_KEY === job.TASK_KEY);
+      });
+
       console.log(`[${selectedTab}] 서버에서 받은 총 작업 수:`, jobs.length);
+      console.log(`[${selectedTab}] 중복 제거 후 작업 수:`, uniqueJobs.length);
 
-      // 첫 번째 작업의 상태를 확인해서 올바른 데이터인지 검증
-      if (jobs.length > 0) {
-        const firstJobStatus = jobs[0].TASK_PROGRESSING;
-        console.log(`[${selectedTab}] 첫 번째 작업 상태:`, firstJobStatus);
-      }
-
-      return jobs;
+      return uniqueJobs;
     } catch (error) {
       console.error(`[${selectedTab}] allJobs 생성 오류:`, error);
-      return [];
     }
   }, [data, selectedTab]);
 
@@ -352,7 +352,7 @@ export default function HomeScreen() {
         <View style={styles.detailsContainer}>
           {(taskDetail.process || []).map((process: any, index: any) => (
             <Text
-              key={index}
+              key={`${job.TASK_KEY}-detail-${index}`}
               style={[
                 styles.detailTag,
                 process.process_status === "완료" && styles.detailTagActive,
@@ -368,7 +368,10 @@ export default function HomeScreen() {
           <Text style={styles.timelineTitle}>진행 상황</Text>
           <View style={styles.timeline}>
             {(taskDetail.process || []).map((process: any, index: any) => (
-              <View key={index} style={styles.timelineItem}>
+              <View
+                key={`${job.TASK_KEY}-timeline-${index}`}
+                style={styles.timelineItem}
+              >
                 <View
                   style={[
                     styles.timelineDot,

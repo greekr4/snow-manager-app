@@ -6,11 +6,12 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAuth } from "@/stores/authStore";
 
 // 앱바 컴포넌트
 function AppBar() {
   const insets = useSafeAreaInsets();
-
+  const { user } = useAuth();
   return (
     <LinearGradient
       colors={["#667eea", "#764ba2"]}
@@ -28,8 +29,8 @@ function AppBar() {
           </LinearGradient>
         </View>
         <View>
-          <Text style={styles.profileName}>김태균</Text>
-          <Text style={styles.profileRole}>대리</Text>
+          <Text style={styles.profileName}>{user?.name}</Text>
+          <Text style={styles.profileRole}>관리자</Text>
         </View>
       </View>
       <View style={styles.appBarRight}>
@@ -72,6 +73,12 @@ export default function TabLayout() {
           tabBarBackground: () => <View style={styles.tabBarBackground} />,
           tabBarButton: (props) => <CustomTabButton {...props} />,
           tabBarLabelStyle: styles.tabBarLabel,
+          tabBarLabelPosition: "below-icon",
+          tabBarItemStyle: {
+            minWidth: 90,
+            alignItems: "center",
+            justifyContent: "center",
+          },
           tabBarHideOnKeyboard: true,
         }}
       >
@@ -240,9 +247,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   tabButton: {
-    width: 40,
+    minWidth: 60,
+
     height: 40,
     borderRadius: 20,
+    paddingHorizontal: 8,
+    display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -255,7 +266,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
     width: 40,
-    height: 40,
+    minHeight: 20,
+    flexDirection: "row",
+    gap: 6,
   },
   activeIndicator: {
     position: "absolute",
@@ -268,6 +281,8 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontSize: 11,
     fontWeight: "600",
+    textAlign: "center",
+    width: "100%",
     marginTop: 2,
   },
 });

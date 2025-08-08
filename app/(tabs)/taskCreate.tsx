@@ -1,3 +1,4 @@
+import { usePushStore } from "@/stores/pushStore";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -57,7 +58,7 @@ interface OptionData {
 
 // 옵션 데이터 가져오기 API
 const fetchOptions = async (): Promise<OptionData[]> => {
-  const response = await axios.get("http://192.168.0.4:3000/options");
+  const response = await axios.get("http://210.114.18.110:3333/options");
   return response.data;
 };
 
@@ -75,7 +76,7 @@ interface CreateTaskDto {
 
 const createTask = async (createTaskDto: CreateTaskDto) => {
   const response = await axios.post(
-    "http://192.168.0.4:3000/tasks",
+    "http://210.114.18.110:3333/tasks",
     createTaskDto
   );
   return response.data;
@@ -84,6 +85,7 @@ const createTask = async (createTaskDto: CreateTaskDto) => {
 export default function TaskCreate() {
   const router = useRouter();
   const screenHeight = Dimensions.get("window").height;
+  const { sendNotification } = usePushStore();
 
   // 옵션 데이터 가져오기
   const { data: optionsData, isLoading: optionsLoading } = useQuery({
@@ -97,13 +99,14 @@ export default function TaskCreate() {
   const queryClient = useQueryClient();
   const createTaskMutation = useMutation({
     mutationFn: createTask,
-    onSuccess: () => {
+    onSuccess: (data) => {
       // 작업 목록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks-count"] });
       Alert.alert("성공", "작업이 생성되었습니다.", [
         { text: "확인", onPress: () => router.back() },
       ]);
+      sendNotification("작업 등록", `[${data.TASK_TITLE}] 등록`, data.TASK_KEY);
     },
     onError: (error) => {
       console.error("작업 생성 실패:", error);
@@ -319,7 +322,9 @@ export default function TaskCreate() {
         return [
           ...filteredOrder,
           {
-            id: `printing-${value}-${Date.now()}`,
+            id: `printing-${value}-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`,
             process_category: "인쇄",
             process_type: `${category}(${type})`,
             process_company: value,
@@ -382,7 +387,9 @@ export default function TaskCreate() {
         return [
           ...filteredOrder,
           {
-            id: `${category}-${type}-${option}-${Date.now()}`,
+            id: `${category}-${type}-${option}-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`,
             process_category: category,
             process_type: type,
             process_company: option,
@@ -1106,7 +1113,7 @@ export default function TaskCreate() {
               <View style={styles.orderListContainer}>
                 {processOrder.map((item, index) => (
                   <DraggableProcessItem
-                    key={item.id}
+                    key={`${item.id}-${index}`}
                     item={item}
                     index={index}
                     onReorder={handleReorder}
