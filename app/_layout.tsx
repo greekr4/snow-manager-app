@@ -88,6 +88,7 @@ export default function RootLayout() {
   });
   const { isLoggedIn } = useAuth();
   const router = useRouter();
+  const currentPathname = usePathname();
   const { setSelectedTask } = useTaskStore();
   const isExpoGo = (Constants as any)?.appOwnership === "expo";
 
@@ -122,15 +123,30 @@ export default function RootLayout() {
       return;
     }
 
-    const navigateFromNotification = (data?: any) => {
+    const navigateFromNotification = (
+      data?: any,
+      options?: { coldStart?: boolean }
+    ) => {
       try {
-        const route = data?.route;
+        const rawRoute = data?.route;
         const taskKey = data?.taskKey;
-        if (route && taskKey) {
-          // 최소 정보로 선택 작업 설정 → 디테일에서 자체 fetch
+        if (!rawRoute || typeof rawRoute !== "string") return;
+        const route = rawRoute.startsWith("/") ? rawRoute : `/${rawRoute}`;
+
+        if (taskKey) {
           setSelectedTask({ TASK_KEY: String(taskKey) } as any);
-          console.log("[RootLayout] notification navigate ->", route);
-          router.push(route);
+        }
+
+        const doNavigate = () => {
+          if (currentPathname === route) return;
+          console.log("[RootLayout] notification navigate ->", route, taskKey);
+          router.replace(route as any);
+        };
+
+        if (options?.coldStart) {
+          setTimeout(doNavigate, 500);
+        } else {
+          doNavigate();
         }
       } catch (e) {
         // noop
@@ -143,7 +159,7 @@ export default function RootLayout() {
       sub = Notifications.addNotificationResponseReceivedListener(
         (response) => {
           const data = response?.notification?.request?.content?.data;
-          navigateFromNotification(data);
+          navigateFromNotification(data, { coldStart: false });
         }
       );
 
@@ -152,7 +168,7 @@ export default function RootLayout() {
         try {
           const last = await Notifications.getLastNotificationResponseAsync();
           const data = last?.notification?.request?.content?.data;
-          if (data) navigateFromNotification(data);
+          if (data) navigateFromNotification(data, { coldStart: true });
         } catch (e) {
           // noop
         }
@@ -167,7 +183,7 @@ export default function RootLayout() {
         sub?.remove?.();
       } catch {}
     };
-  }, [router, setSelectedTask, isExpoGo]);
+  }, [router, setSelectedTask, isExpoGo, currentPathname]);
 
   if (!loaded) {
     return null;

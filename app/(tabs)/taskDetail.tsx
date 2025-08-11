@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  RefreshControl,
   StyleSheet,
   Switch,
   Text,
@@ -372,6 +373,7 @@ export default function TaskDetailScreen() {
     isLoading,
     error,
     refetch,
+    isFetching,
   } = useQuery({
     queryKey: ["task-detail", taskKey],
     queryFn: () => fetchTaskDetail(taskKey),
@@ -678,6 +680,14 @@ export default function TaskDetailScreen() {
       enableResetScrollToCoords={false}
       // 키보드 열림 지연 시간을 0으로 설정하여 즉시 반응
       keyboardOpeningTime={0}
+      refreshControl={
+        <RefreshControl
+          refreshing={!!isFetching}
+          onRefresh={refetch}
+          colors={["#007AFF"]}
+          tintColor="#007AFF"
+        />
+      }
     >
       {/* 작업 정보 카드 */}
       <View style={styles.taskCard}>
