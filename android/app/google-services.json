@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "229583032107",
+    "project_id": "snowmanagerapp",
+    "storage_bucket": "snowmanagerapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:229583032107:android:a7a461ee3457c61bcaff6e",
+        "android_client_info": {
+          "package_name": "com.tkman.snowmanagerapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJPpLVFz7XkXP-K7Uyknc9VKm68uoEL3o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
