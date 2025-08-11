@@ -18,7 +18,8 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tkman.snowmanagerapp",
-      "versionCode": 1
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",

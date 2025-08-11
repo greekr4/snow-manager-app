@@ -21,6 +21,37 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view
 
 const { height: screenHeight } = Dimensions.get("window");
 
+// 안전한 projectId 해석 함수 (EAS 빌드/개발 클라이언트/환경변수 등 모두 대응)
+function resolveExpoProjectId(): string | null {
+  const fromEas = (Constants as any)?.easConfig?.projectId;
+  if (typeof fromEas === "string" && fromEas.length > 0) return fromEas;
+  const fromEnv = (process as any)?.env?.EXPO_PUBLIC_EAS_PROJECT_ID;
+  if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
+  const fromExpoConfig = (Constants as any)?.expoConfig?.extra?.eas?.projectId;
+  if (typeof fromExpoConfig === "string" && fromExpoConfig.length > 0)
+    return fromExpoConfig;
+  return null;
+}
+
+// 안전한 Expo 푸시 토큰 발급 (projectId 지정 → 실패 시 무옵션 폴백)
+async function getExpoPushTokenSafe(): Promise<string | null> {
+  try {
+    const projectId = resolveExpoProjectId();
+    if (projectId) {
+      try {
+        const res = await Notifications.getExpoPushTokenAsync({ projectId });
+        return res.data ?? null;
+      } catch (err) {
+        // projectId 지정 실패 시 무옵션 재시도
+      }
+    }
+    const res = await Notifications.getExpoPushTokenAsync();
+    return res.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -112,26 +143,13 @@ export default function LoginScreen() {
           }
 
           if (status === "granted") {
-            const PROJECT_ID =
-              (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
-              (Constants as any)?.easConfig?.projectId ||
-              (process as any)?.env?.EXPO_PUBLIC_EAS_PROJECT_ID;
-            if (PROJECT_ID) {
-              try {
-                const res = await Notifications.getExpoPushTokenAsync({
-                  projectId: PROJECT_ID,
-                });
-                pushToken = res.data;
-              } catch (tokenErr) {
-                console.log("푸시 토큰 발급 실패", tokenErr);
-                Alert.alert(
-                  "알림",
-                  "푸시 토큰 발급 실패. 알림 비활성화 상태로 계속 진행합니다."
-                );
-              }
-            } else {
-              console.log(
-                "프로젝트 ID 미설정: 푸시 토큰 발급을 건너뜁니다. EXPO_PUBLIC_EAS_PROJECT_ID를 설정하세요."
+            try {
+              pushToken = await getExpoPushTokenSafe();
+            } catch (tokenErr) {
+              console.log("푸시 토큰 발급 실패", tokenErr);
+              Alert.alert(
+                "알림",
+                "푸시 토큰 발급 실패. 알림 비활성화 상태로 계속 진행합니다."
               );
             }
           }
