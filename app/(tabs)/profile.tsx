@@ -35,44 +35,60 @@ Notifications.setNotificationHandler({
   }),
 });
 
-async function registerForPushNotificationsAsync(): Promise<string | null> {
+async function registerForPushNotificationsAsync(): Promise<{
+  token: string | null;
+  debug: string;
+}> {
   try {
+    const logs: string[] = [];
     if (!Device.isDevice) {
-      Alert.alert(
-        "알림",
-        "시뮬레이터/에뮬레이터에서는 푸시 토큰 발급이 제한될 수 있습니다."
-      );
-      return null;
+      const msg =
+        "시뮬레이터/에뮬레이터에서는 푸시 토큰 발급이 제한될 수 있습니다.";
+      logs.push("Device check: not a real device");
+      Alert.alert("알림", msg);
+      return { token: null, debug: logs.join("\n") };
     }
 
     const { status: existingStatus } =
       await Notifications.getPermissionsAsync();
+    logs.push(`Permissions existing: ${existingStatus}`);
     let finalStatus = existingStatus;
     if (existingStatus !== "granted") {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      logs.push(`Permissions requested -> ${status}`);
     }
     if (finalStatus !== "granted") {
-      Alert.alert("권한 필요", "푸시 알림 권한이 거부되었습니다.");
-      return null;
+      const msg = "푸시 알림 권한이 거부되었습니다.";
+      logs.push("Permission not granted");
+      Alert.alert("권한 필요", msg);
+      return { token: null, debug: logs.join("\n") };
     }
 
-    // Expo Push Token 발급 (EAS 프로젝트인 경우 projectId 필요)
     const PROJECT_ID =
       (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
       (Constants as any)?.easConfig?.projectId ||
       (process as any)?.env?.EXPO_PUBLIC_EAS_PROJECT_ID;
+    logs.push(`ProjectId: ${PROJECT_ID || "<none>"}`);
 
-    const tokenResponse = await Notifications.getExpoPushTokenAsync(
-      PROJECT_ID ? { projectId: PROJECT_ID } : undefined
-    );
-    const token = tokenResponse.data;
-
-    await AsyncStorage.setItem(STORAGE_KEYS.expoPushToken, token);
-    return token;
-  } catch (error) {
-    console.error("푸시 권한/토큰 설정 오류:", error);
-    return null;
+    try {
+      const tokenResponse = await Notifications.getExpoPushTokenAsync(
+        PROJECT_ID ? { projectId: PROJECT_ID } : undefined
+      );
+      const token = tokenResponse.data;
+      logs.push(`getExpoPushTokenAsync success: ${!!token}`);
+      await AsyncStorage.setItem(STORAGE_KEYS.expoPushToken, token);
+      return { token, debug: logs.join("\n") };
+    } catch (err: any) {
+      const errMsg = err?.message || JSON.stringify(err);
+      logs.push(`getExpoPushTokenAsync error: ${errMsg}`);
+      Alert.alert("푸시 토큰 발급 오류", String(errMsg));
+      return { token: null, debug: logs.join("\n") };
+    }
+  } catch (error: any) {
+    const msg = error?.message || String(error);
+    Alert.alert("푸시 권한/토큰 설정 오류", msg);
+    return { token: null, debug: msg };
   }
 }
 
@@ -82,14 +98,17 @@ export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(
     user?.pushEnabled ?? true
   );
+  const [pushDebug, setPushDebug] = useState<string | null>(null);
+  const [pushToken, setPushToken] = useState<string | null>(null);
 
   // 초기 상태 동기화: DB의 pushEnabled 우선 반영, 없으면 로컬 스토리지 참고
   useEffect(() => {
     (async () => {
       if (typeof user?.pushEnabled === "boolean") {
         setNotificationsEnabled(!!user.pushEnabled);
-        return;
       }
+      const savedToken = await AsyncStorage.getItem(STORAGE_KEYS.expoPushToken);
+      if (savedToken) setPushToken(savedToken);
       const n = await AsyncStorage.getItem(STORAGE_KEYS.notificationsEnabled);
       if (n !== null) setNotificationsEnabled(n === "true");
     })();
@@ -124,10 +143,15 @@ export default function ProfileScreen() {
     try {
       let tokenToUse: string | null = null;
       if (value) {
-        const token = await registerForPushNotificationsAsync();
+        const { token, debug } = await registerForPushNotificationsAsync();
         tokenToUse = token;
+        setPushDebug(debug || null);
+        setPushToken(token || null);
         if (!token) {
-          Alert.alert("알림", "푸시 토큰 발급에 실패했습니다.");
+          Alert.alert(
+            "알림",
+            `푸시 토큰 발급에 실패했습니다.\n\n원인:\n${debug}`
+          );
         }
       }
 
@@ -176,6 +200,37 @@ export default function ProfileScreen() {
     } catch (e) {
       console.error("알림 테스트 오류:", e);
       Alert.alert("오류", "알림을 표시하는 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleExpoRemoteTest = async () => {
+    try {
+      if (!pushToken) {
+        Alert.alert("토큰 없음", "유효한 푸시 토큰이 없습니다.");
+        return;
+      }
+      const message = {
+        to: pushToken,
+        sound: "default",
+        title: "원격 푸시 테스트",
+        body: "Expo Push API를 통해 전송된 테스트 메시지입니다.",
+        data: { route: "/(tabs)" },
+      };
+      const resp = await axios.post(
+        "https://exp.host/--/api/v2/push/send",
+        message,
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 15000,
+        }
+      );
+      const info =
+        typeof resp?.data === "string"
+          ? resp.data
+          : JSON.stringify(resp?.data, null, 2);
+      Alert.alert("전송됨", `Expo Push API 응답:\n\n${info}`);
+    } catch (e: any) {
+      Alert.alert("전송 실패", e?.message || "네트워크 오류");
     }
   };
 
@@ -252,6 +307,34 @@ export default function ProfileScreen() {
               thumbColor={notificationsEnabled ? "#fff" : "#f4f3f4"}
             />
           </View>
+          {pushDebug ? (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: "#666", fontSize: 12 }}>{pushDebug}</Text>
+            </View>
+          ) : null}
+
+          {pushToken ? (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: "#333", fontSize: 12 }} numberOfLines={2}>
+                Token: {pushToken}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={handleExpoRemoteTest}
+                  style={{
+                    backgroundColor: "#28a745",
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "600" }}>
+                    원격 테스트 전송
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
 
           <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
             <TouchableOpacity
