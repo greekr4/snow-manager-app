@@ -175,7 +175,7 @@ export default function LoginScreen() {
         // 어떤 에러도 여기서 앱 종료 없이 흡수
       }
     } catch (error) {
-      Alert.alert("오류", "로그인에 실패했습니다.");
+      Alert.alert("오류", `로그인에 실패했습니다. ${(error as any).message}`);
     }
   };
 
