@@ -77,28 +77,31 @@ interface CreateLogParams {
 // API 함수들
 const fetchTaskDetail = async (taskKey: string) => {
   const response = await axios.get(
-    `http://210.114.18.110:3333/tasks/${taskKey}`
+    `https://snowplanet.co.kr/nest/tasks/${taskKey}`
   );
   return response.data;
 };
 
 const createComment = async (params: CreateCommentParams) => {
   const response = await axios.post(
-    `http://210.114.18.110:3333/comments`,
+    `https://snowplanet.co.kr/nest/comments`,
     params
   );
   return response.data;
 };
 
 const createLog = async (params: CreateLogParams) => {
-  const response = await axios.post(`http://210.114.18.110:3333/logs`, params);
+  const response = await axios.post(
+    `https://snowplanet.co.kr/nest/logs`,
+    params
+  );
   return response.data;
 };
 
 const updateTask = async ({ taskKey, taskDetail }: UpdateTaskParams) => {
   console.log("작업 업데이트 시작:", taskKey, taskDetail);
   const response = await axios.patch(
-    `http://210.114.18.110:3333/tasks/${taskKey}`,
+    `https://snowplanet.co.kr/nest/tasks/${taskKey}`,
     {
       taskDetail: taskDetail, // updateTasksDto 없이 직접 taskDetail 전송
     }
@@ -114,7 +117,7 @@ const updateTaskProgressing = async ({
   taskKey: string;
   progressing: "대기" | "진행중" | "완료";
 }) => {
-  return axios.patch(`http://210.114.18.110:3333/tasks/${taskKey}`, {
+  return axios.patch(`https://snowplanet.co.kr/nest/tasks/${taskKey}`, {
     taskProgressing: progressing,
   });
 };

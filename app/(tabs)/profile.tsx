@@ -158,7 +158,7 @@ export default function ProfileScreen() {
       // 서버에 현재 사용자 푸시 설정 업데이트
       const adminKey = user?.adminKey || user?.id;
       if (adminKey) {
-        await axios.patch(`http://210.114.18.110:3333/users/${adminKey}`, {
+        await axios.patch(`https://snowplanet.co.kr/nest/users/${adminKey}`, {
           pushToken: value ? tokenToUse : null,
           pushEnabled: value,
         });

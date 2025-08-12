@@ -15,6 +15,7 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 import { useAuth } from "@/stores/authStore";
 import { useTaskStore } from "@/stores/taskStore";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import axios from "axios";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -97,6 +98,36 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  // 전역 axios 설정(타임아웃/디버깅)
+  useEffect(() => {
+    axios.defaults.timeout = 15000;
+    const req = axios.interceptors.request.use((config) => {
+      return config;
+    });
+    const res = axios.interceptors.response.use(
+      (r) => r,
+      (error) => {
+        const isCanceled =
+          axios.isCancel?.(error) || error?.message === "canceled";
+        const status = error?.response?.status;
+        const url = error?.config?.url;
+        if (isCanceled) {
+          console.warn(`[HTTP] 요청 취소됨: ${url}`);
+        } else {
+          console.warn(
+            `[HTTP] 오류 ${status || ""}: ${url}`,
+            error?.response?.data || error?.message
+          );
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.request.eject(req);
+      axios.interceptors.response.eject(res);
+    };
+  }, []);
 
   // Android 알림 채널을 최대 중요도로 설정 (사운드/배너 보장)
   useEffect(() => {

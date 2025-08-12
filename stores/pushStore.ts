@@ -40,7 +40,7 @@ export const usePushStore = create<PushState>((set, get) => ({
   loadRecipients: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axios.get("http://210.114.18.110:3333/users", {
+      const res = await axios.get("https://snowplanet.co.kr/nest/users", {
         params: { pushEnabled: 1 },
       });
       const raw = Array.isArray(res.data) ? res.data : res.data?.data || [];

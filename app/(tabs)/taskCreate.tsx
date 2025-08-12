@@ -58,7 +58,7 @@ interface OptionData {
 
 // 옵션 데이터 가져오기 API
 const fetchOptions = async (): Promise<OptionData[]> => {
-  const response = await axios.get("http://210.114.18.110:3333/options");
+  const response = await axios.get("https://snowplanet.co.kr/nest/options");
   return response.data;
 };
 
@@ -76,7 +76,7 @@ interface CreateTaskDto {
 
 const createTask = async (createTaskDto: CreateTaskDto) => {
   const response = await axios.post(
-    "http://210.114.18.110:3333/tasks",
+    "https://snowplanet.co.kr/nest/tasks",
     createTaskDto
   );
   return response.data;
