@@ -93,6 +93,9 @@ export default function RootLayout() {
   const { setSelectedTask } = useTaskStore();
   const isExpoGo = (Constants as any)?.appOwnership === "expo";
 
+  // cold-start 응답을 한 번만 처리하기 위한 ref
+  const didHandleColdStartRef = useRef(false);
+
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
@@ -194,12 +197,16 @@ export default function RootLayout() {
         }
       );
 
-      // cold start에서 마지막 응답 처리
+      // cold start에서 마지막 응답 처리 (한 번만)
       (async () => {
         try {
+          if (didHandleColdStartRef.current) return;
           const last = await Notifications.getLastNotificationResponseAsync();
           const data = last?.notification?.request?.content?.data;
-          if (data) navigateFromNotification(data, { coldStart: true });
+          if (data) {
+            didHandleColdStartRef.current = true;
+            navigateFromNotification(data, { coldStart: true });
+          }
         } catch (e) {
           // noop
         }
@@ -214,7 +221,7 @@ export default function RootLayout() {
         sub?.remove?.();
       } catch {}
     };
-  }, [router, setSelectedTask, isExpoGo, currentPathname]);
+  }, [router, setSelectedTask, isExpoGo]);
 
   if (!loaded) {
     return null;

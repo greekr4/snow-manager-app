@@ -5,7 +5,9 @@ import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
+  Modal,
   RefreshControl,
   StyleSheet,
   Switch,
@@ -119,6 +121,13 @@ const updateTaskProgressing = async ({
 }) => {
   return axios.patch(`https://snowplanet.co.kr/nest/tasks/${taskKey}`, {
     taskProgressing: progressing,
+  });
+};
+
+// 작업 삭제(TASK_DEL=1) API
+const softDeleteTask = async (taskKey: string) => {
+  return axios.patch(`https://snowplanet.co.kr/nest/tasks/${taskKey}`, {
+    taskDel: 1,
   });
 };
 
@@ -348,25 +357,17 @@ export default function TaskDetailScreen() {
   const { user } = useAuth();
   const authAdminKey = (user as any)?.adminKey || (user as any)?.id;
 
-  // 탭 포커스 시 스크롤을 맨 위로 이동
-  useFocusEffect(
-    React.useCallback(() => {
-      // 약간의 지연을 두어 컴포넌트가 완전히 렌더링된 후 스크롤 실행
-      const timer = setTimeout(() => {
-        if (scrollViewRef.current) {
-          // KeyboardAwareScrollView의 내부 ScrollView에 접근
-          const scrollView = (
-            scrollViewRef.current as any
-          ).getScrollResponder();
-          if (scrollView && scrollView.scrollTo) {
-            scrollView.scrollTo({ x: 0, y: 0, animated: true });
-          }
-        }
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }, [])
-  );
+  // 공정 수정 모달 상태
+  const [editVisible, setEditVisible] = useState(false);
+  const [editProcess, setEditProcess] = useState<ProcessItem[]>([]);
+  const [newItem, setNewItem] = useState<ProcessItem>({
+    process_category: "",
+    process_type: "",
+    process_company: "",
+    process_company_tel: "",
+    process_status: "미완료",
+    process_memo: "",
+  });
 
   // 개별 작업 데이터 패칭
   const taskKey =
@@ -386,9 +387,61 @@ export default function TaskDetailScreen() {
     refetchOnMount: true,
   });
 
+  // 앱이 포그라운드로 복귀할 때 상세 refetch
+  React.useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refetch();
+      }
+    });
+    return () => {
+      try {
+        sub.remove();
+      } catch {}
+    };
+  }, [refetch]);
+
+  // 탭 포커스 시 스크롤을 맨 위로 이동 + 항상 최신 데이터 refetch
+  useFocusEffect(
+    React.useCallback(() => {
+      const timer = setTimeout(() => {
+        if (scrollViewRef.current) {
+          const scrollView = (
+            scrollViewRef.current as any
+          ).getScrollResponder();
+          if (scrollView && scrollView.scrollTo) {
+            scrollView.scrollTo({ x: 0, y: 0, animated: true });
+          }
+        }
+        refetch();
+      }, 100);
+      return () => clearTimeout(timer);
+    }, [refetch])
+  );
+
   // 작업 업데이트 mutation (컴포넌트 최상위 레벨에서 호출)
   const updateTaskMutation = useMutation({
     mutationFn: updateTask,
+  });
+
+  // 작업 삭제 mutation
+  const deleteTaskMutation = useMutation({
+    mutationFn: softDeleteTask,
+    onSuccess: () => {
+      Alert.alert("완료", "작업이 삭제되었습니다.", [
+        {
+          text: "확인",
+          onPress: () => {
+            // 캐시 무효화 및 목록으로 이동
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            queryClient.invalidateQueries({ queryKey: ["tasks-count"] });
+            clearSelectedTask();
+            router.back();
+          },
+        },
+      ]);
+    },
+    onError: () => Alert.alert("오류", "작업 삭제에 실패했습니다."),
   });
 
   // 작업 전체 상태 업데이트 mutation
@@ -615,6 +668,83 @@ export default function TaskDetailScreen() {
       adminKey: authAdminKey || taskData.ADMIN_KEY || "tk",
       commentContent: commentText.trim(),
     });
+  };
+
+  // 공정 편집 열기
+  const openEdit = () => {
+    try {
+      const current = parseTaskDetail((taskData as any)?.TASK_DETAIL || "");
+      setEditProcess(Array.isArray(current.process) ? current.process : []);
+      setNewItem({
+        process_category: "",
+        process_type: "",
+        process_company: "",
+        process_company_tel: "",
+        process_status: "미완료",
+        process_memo: "",
+      });
+      setEditVisible(true);
+    } catch {
+      setEditProcess([]);
+      setEditVisible(true);
+    }
+  };
+
+  // 공정 편집 동작들
+  const moveUp = (index: number) => {
+    if (index <= 0) return;
+    const next = [...editProcess];
+    const temp = next[index - 1];
+    next[index - 1] = next[index];
+    next[index] = temp;
+    setEditProcess(next);
+  };
+  const moveDown = (index: number) => {
+    if (index >= editProcess.length - 1) return;
+    const next = [...editProcess];
+    const temp = next[index + 1];
+    next[index + 1] = next[index];
+    next[index] = temp;
+    setEditProcess(next);
+  };
+  const removeItem = (index: number) => {
+    const next = editProcess.filter((_, i) => i !== index);
+    setEditProcess(next);
+  };
+  const addItem = () => {
+    if (
+      !newItem.process_category ||
+      !newItem.process_type ||
+      !newItem.process_company
+    ) {
+      Alert.alert("안내", "카테고리/타입/업체를 입력하세요.");
+      return;
+    }
+    setEditProcess((prev) => [...prev, newItem]);
+    setNewItem({
+      process_category: "",
+      process_type: "",
+      process_company: "",
+      process_company_tel: "",
+      process_status: "미완료",
+      process_memo: "",
+    });
+  };
+  const saveProcess = () => {
+    if (!taskData) return;
+    const current = parseTaskDetail((taskData as any)?.TASK_DETAIL || "");
+    const updatedTaskDetail = { ...current, process: editProcess } as any;
+    updateTaskMutation.mutate(
+      { taskKey: (taskData as any).TASK_KEY, taskDetail: updatedTaskDetail },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["task-detail", taskKey] });
+          setEditVisible(false);
+        },
+        onError: () => Alert.alert("오류", "공정 저장에 실패했습니다."),
+      }
+    );
   };
 
   // 로딩 상태
@@ -879,10 +1009,10 @@ export default function TaskDetailScreen() {
           label="개별사이즈"
           value={taskDetail.product_size || "개별 사이즈 정보 없음"}
         />
-        <DetailItem
+        {/* <DetailItem
           label="납품방식"
           value={taskDetail.delivery_type || "납품 방식 정보 없음"}
-        />
+        /> */}
         {(taskDetail.process || []).map(
           (process: ProcessItem, index: number) => (
             <DetailFinish
@@ -900,7 +1030,13 @@ export default function TaskDetailScreen() {
           )
         )}
       </View>
-
+      {/* 공정 편집 카드 */}
+      <View style={styles.Card}>
+        <Text style={styles.CardTitle}>공정 편집</Text>
+        <TouchableOpacity style={styles.editButton} onPress={openEdit}>
+          <Text style={styles.editButtonText}>수정</Text>
+        </TouchableOpacity>
+      </View>
       {/* 댓글 섹션 */}
       <View style={styles.Card}>
         <Text style={styles.CardTitle}>댓글</Text>
@@ -972,6 +1108,138 @@ export default function TaskDetailScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* 작업 삭제 버튼 */}
+      <View style={styles.Card}>
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert("확인", "정말로 이 작업을 삭제하시겠습니까?", [
+              { text: "취소", style: "cancel" },
+              {
+                text: "삭제",
+                style: "destructive",
+                onPress: () =>
+                  task.TASK_KEY && deleteTaskMutation.mutate(task.TASK_KEY),
+              },
+            ]);
+          }}
+          style={[
+            styles.submitButton,
+            { backgroundColor: "#F44336", marginTop: 0 },
+          ]}
+        >
+          <Text style={styles.submitButtonText}>작업 삭제</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 공정 수정 모달 */}
+      <Modal
+        visible={editVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.editModal}>
+            <Text style={styles.CardTitle}>공정 수정</Text>
+
+            {/* 추가 폼 */}
+            <View style={{ gap: 8, marginBottom: 10 }}>
+              <TextInput
+                style={styles.editInput}
+                placeholder="카테고리 (인쇄, 코팅)"
+                value={newItem.process_category}
+                onChangeText={(v) =>
+                  setNewItem({ ...newItem, process_category: v })
+                }
+              />
+              <TextInput
+                style={styles.editInput}
+                placeholder="타입 (단면무광, 단면유광)"
+                value={newItem.process_type}
+                onChangeText={(v) =>
+                  setNewItem({ ...newItem, process_type: v })
+                }
+              />
+              <TextInput
+                style={styles.editInput}
+                placeholder="업체"
+                value={newItem.process_company}
+                onChangeText={(v) =>
+                  setNewItem({ ...newItem, process_company: v })
+                }
+              />
+              <TextInput
+                style={styles.editInput}
+                placeholder="연락처(선택)"
+                value={newItem.process_company_tel}
+                onChangeText={(v) =>
+                  setNewItem({ ...newItem, process_company_tel: v })
+                }
+              />
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.stateButton, styles.stateButtonActive]}
+                  onPress={addItem}
+                >
+                  <Text style={styles.stateButtonText}>추가</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.stateButton}
+                  onPress={() => setEditVisible(false)}
+                >
+                  <Text style={styles.stateButtonText}>닫기</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* 편집 리스트 */}
+            <View style={{ maxHeight: 280 }}>
+              {editProcess.map((p, idx) => (
+                <View
+                  key={`${p.process_category}-${p.process_type}-${idx}`}
+                  style={styles.editRow}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: "600", color: "#333" }}>
+                      [{p.process_category}] {p.process_type}
+                    </Text>
+                    <Text style={{ color: "#666" }}>{p.process_company}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => moveUp(idx)}
+                    style={styles.iconBtn}
+                  >
+                    <Ionicons name="arrow-up" size={18} color="#333" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => moveDown(idx)}
+                    style={styles.iconBtn}
+                  >
+                    <Ionicons name="arrow-down" size={18} color="#333" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => removeItem(idx)}
+                    style={styles.iconBtn}
+                  >
+                    <Ionicons name="trash" size={18} color="#F44336" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              onPress={saveProcess}
+              style={[styles.submitButton, { marginTop: 10 }]}
+              disabled={updateTaskMutation.isPending}
+            >
+              <Text style={styles.submitButtonText}>
+                {updateTaskMutation.isPending ? "저장 중..." : "저장"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAwareScrollView>
   );
 }
@@ -1379,5 +1647,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#333",
+  },
+  editButton: {
+    backgroundColor: "#6938EF",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  editButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  editModal: {
+    backgroundColor: "#fff",
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 16,
+  },
+  editRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    gap: 6,
+  },
+  iconBtn: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: "#F5F5F5",
+    marginLeft: 4,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+  },
+  submitButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });

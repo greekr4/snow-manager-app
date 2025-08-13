@@ -3,11 +3,12 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  AppState,
   Dimensions,
   Modal, // Modal 컴포넌트를 import 합니다.
   Platform,
@@ -88,12 +89,37 @@ export default function TaskCreate() {
   const { sendNotification } = usePushStore();
 
   // 옵션 데이터 가져오기
-  const { data: optionsData, isLoading: optionsLoading } = useQuery({
+  const {
+    data: optionsData,
+    isLoading: optionsLoading,
+    refetch: refetchOptions,
+  } = useQuery({
     queryKey: ["options"],
     queryFn: fetchOptions,
     staleTime: 1000 * 60 * 10, // 10분 캐시
     refetchOnWindowFocus: false,
   });
+
+  // 탭 포커스 시 옵션 리패칭
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchOptions();
+    }, [refetchOptions])
+  );
+
+  // 앱 포그라운드 복귀 시 옵션 리패칭
+  React.useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refetchOptions();
+      }
+    });
+    return () => {
+      try {
+        sub.remove();
+      } catch {}
+    };
+  }, [refetchOptions]);
 
   // 작업 생성 mutation
   const queryClient = useQueryClient();
@@ -146,12 +172,29 @@ export default function TaskCreate() {
       }));
   }, [optionsData]);
 
+  // 출고 옵션을 DB 데이터로 동적 생성 (후가공과 동일한 구조)
+  const shippingOptions = React.useMemo(() => {
+    if (!optionsData) return [];
+
+    return optionsData
+      .filter((option) => option.OPTION_CATEGORY === "출고")
+      .map((option) => ({
+        category: option.OPTION_TITLE,
+        type: option.tb_task_option_detail.map((detail) => detail.DETAIL_NAME),
+        options: option.tb_task_option_company.map(
+          (company) => company.COMPANY_NAME
+        ),
+        optionKey: option.OPTION_KEY,
+      }));
+  }, [optionsData]);
+
   // 애니메이션 값들
   const slideAnimDelivery = useRef(new Animated.Value(screenHeight)).current;
   const slideAnimPrinting = useRef(new Animated.Value(screenHeight)).current;
   const slideAnimPostProcessing = useRef(
     new Animated.Value(screenHeight)
   ).current;
+  const slideAnimShipping = useRef(new Animated.Value(screenHeight)).current;
 
   const [formData, setFormData] = useState({
     task_title: "",
@@ -190,6 +233,7 @@ export default function TaskCreate() {
   const [expandedDeliveryCategories, setExpandedDeliveryCategories] = useState<
     string[]
   >(["납품방식"]);
+  const [showShippingModal, setShowShippingModal] = useState(false);
 
   // iOS DatePicker에서 임시로 날짜를 저장할 state
   const [pickerDate, setPickerDate] = useState(new Date());
@@ -257,6 +301,25 @@ export default function TaskCreate() {
       useNativeDriver: true,
     }).start(() => {
       setShowPostProcessingModal(false);
+    });
+  };
+
+  const handleOpenShippingModal = () => {
+    setShowShippingModal(true);
+    Animated.timing(slideAnimShipping, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseShippingModal = () => {
+    Animated.timing(slideAnimShipping, {
+      toValue: screenHeight,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowShippingModal(false);
     });
   };
 
@@ -403,6 +466,68 @@ export default function TaskCreate() {
     });
   };
 
+  // 출고 선택 변경 (후가공과 동일 정책)
+  const handleShippingChange = (
+    category: string,
+    type: string,
+    option: string
+  ) => {
+    setProcessOrder((prevOrder) => {
+      const existingItem = prevOrder.find(
+        (item) =>
+          item.process_category === category &&
+          item.process_type === type &&
+          item.process_company === option
+      );
+
+      if (existingItem) {
+        return prevOrder.filter(
+          (item) =>
+            !(
+              item.process_category === category &&
+              item.process_type === type &&
+              item.process_company === option
+            )
+        );
+      } else {
+        const filteredOrder = prevOrder.filter(
+          (item) => item.process_category !== category
+        );
+
+        let companyTel = "";
+        if (optionsData) {
+          const optionData = optionsData.find(
+            (opt) => opt.OPTION_TITLE === category
+          );
+          if (optionData) {
+            const company = optionData.tb_task_option_company.find(
+              (comp) => comp.COMPANY_NAME === option
+            );
+            if (company && company.COMPANY_TEL) {
+              companyTel = company.COMPANY_TEL;
+            }
+          }
+        }
+
+        return [
+          ...filteredOrder,
+          {
+            id: `${category}-${type}-${option}-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`,
+            process_category: category,
+            process_type: type,
+            process_company: option,
+            process_company_tel: companyTel,
+            process_status: "미완료" as const,
+            process_memo: "",
+            order: filteredOrder.length,
+          },
+        ];
+      }
+    });
+  };
+
   const getSelectedPostProcessingText = () => {
     const selectedItems = processOrder
       .filter((item) => item.process_category !== "인쇄")
@@ -467,6 +592,8 @@ export default function TaskCreate() {
     const getProcessIcon = () => {
       if (item.process_category === "인쇄") {
         return { name: "print-outline", color: "#007AFF" };
+      } else if (item.process_category === "출고") {
+        return { name: "cube-outline", color: "#FF9800" };
       } else {
         return { name: "construct-outline", color: "#34C759" };
       }
@@ -955,7 +1082,8 @@ export default function TaskCreate() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.inputContainer}>
+          {/* 납품방식 */}
+          {/* <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>납품방식</Text>
             <TouchableOpacity
               style={styles.inputWrapper}
@@ -977,7 +1105,7 @@ export default function TaskCreate() {
               </Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
-          </View>
+          </View> */}
         </View>
 
         {/* 작업 상세 */}
@@ -1099,6 +1227,24 @@ export default function TaskCreate() {
                 style={styles.inputIcon}
               />
               <Text style={[styles.textInput]}>후가공을 선택하세요</Text>
+              <Ionicons name="chevron-down-outline" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
+
+          {/* 출고 */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>출고</Text>
+            <TouchableOpacity
+              style={styles.inputWrapper}
+              onPress={handleOpenShippingModal}
+            >
+              <Ionicons
+                name="cube-outline"
+                size={20}
+                color="#666"
+                style={styles.inputIcon}
+              />
+              <Text style={[styles.textInput]}>출고 옵션을 선택하세요</Text>
               <Ionicons name="chevron-down-outline" size={20} color="#666" />
             </TouchableOpacity>
           </View>
@@ -1539,6 +1685,74 @@ export default function TaskCreate() {
                   <TouchableOpacity
                     style={styles.modalConfirmButton}
                     onPress={handleClosePostProcessingModal}
+                  >
+                    <Text style={styles.modalConfirmButtonText}>확인</Text>
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* 출고 선택 Modal */}
+      <Modal
+        transparent={true}
+        animationType="none"
+        visible={showShippingModal}
+        onRequestClose={handleCloseShippingModal}
+      >
+        <TouchableWithoutFeedback onPress={handleCloseShippingModal}>
+          <View style={styles.modalBackdrop}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <Animated.View
+                style={[
+                  styles.optionPickerModalView,
+                  {
+                    transform: [{ translateY: slideAnimShipping }],
+                  },
+                ]}
+              >
+                <View style={styles.handle} />
+                <View style={styles.optionPickerHeader}>
+                  <Text style={styles.optionPickerTitle}>출고</Text>
+                </View>
+                <View style={styles.optionPickerContent}>
+                  <KeyboardAwareScrollView
+                    showsVerticalScrollIndicator={true}
+                    contentContainerStyle={styles.scrollContent}
+                    nestedScrollEnabled={true}
+                    style={{ flex: 1 }}
+                  >
+                    {optionsLoading ? (
+                      <View style={styles.loadingContainer}>
+                        <Text style={styles.loadingText}>
+                          옵션을 불러오는 중...
+                        </Text>
+                      </View>
+                    ) : shippingOptions.length > 0 ? (
+                      shippingOptions.map((item) => (
+                        <PostProcessingAccordion
+                          key={item.category}
+                          item={item}
+                          processOrder={processOrder}
+                          onPostProcessingChange={handleShippingChange}
+                        />
+                      ))
+                    ) : (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>
+                          사용 가능한 출고 옵션이 없습니다.
+                        </Text>
+                      </View>
+                    )}
+                  </KeyboardAwareScrollView>
+                </View>
+                {/* 확인 버튼 */}
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.modalConfirmButton}
+                    onPress={handleCloseShippingModal}
                   >
                     <Text style={styles.modalConfirmButtonText}>확인</Text>
                   </TouchableOpacity>

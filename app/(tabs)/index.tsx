@@ -12,6 +12,7 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Modal,
   RefreshControl,
@@ -202,6 +203,20 @@ export default function HomeScreen() {
       return [];
     }
   }, [allJobs, selectedTab]);
+
+  // 앱이 포그라운드로 복귀할 때 상세 refetch
+  React.useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refetch();
+      }
+    });
+    return () => {
+      try {
+        sub.remove();
+      } catch {}
+    };
+  }, [refetch]);
 
   // 탭 포커스시 데이터 리페치
   useFocusEffect(
