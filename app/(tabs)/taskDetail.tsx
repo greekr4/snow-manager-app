@@ -918,30 +918,83 @@ export default function TaskDetailScreen() {
             onPress={() => {
               if (task.TASK_PROGRESSING === "완료") return;
               if (updateProgressingMutation.isPending) return;
-              updateProgressingMutation.mutate(
-                { taskKey: task.TASK_KEY, progressing: "완료" },
-                {
-                  onSuccess: () => {
-                    createLogMutation.mutate({
-                      taskKey: task.TASK_KEY,
-                      adminKey: authAdminKey || task.ADMIN_KEY || "tk",
-                      logContent: `${task.TASK_PROGRESSING} -> 완료`,
-                    });
-                    sendNotification(
-                      "작업 상태 변경",
-                      `[${task.TASK_TITLE}] 완료`,
-                      task.TASK_KEY
-                    );
-                    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-                    queryClient.invalidateQueries({
-                      queryKey: ["tasks-count"],
-                    });
-                    queryClient.invalidateQueries({
-                      queryKey: ["task-detail", taskKey],
-                    });
+
+              // 모든 공정을 완료로 변경할지 확인
+              Alert.alert(
+                "작업 완료",
+                "작업을 완료로 변경하시겠습니까?\n모든 공정도 함께 완료로 변경됩니다.",
+                [
+                  { text: "취소", style: "cancel" },
+                  {
+                    text: "완료",
+                    onPress: () => {
+                      // 현재 TASK_DETAIL 파싱
+                      const currentTaskDetail = parseTaskDetail(
+                        task.TASK_DETAIL
+                      );
+
+                      // 모든 공정을 완료로 변경
+                      const updatedProcess = currentTaskDetail.process.map(
+                        (process) => ({
+                          ...process,
+                          process_status: "완료",
+                        })
+                      );
+
+                      const updatedTaskDetail = {
+                        ...currentTaskDetail,
+                        process: updatedProcess,
+                      };
+
+                      // 공정 상태 업데이트 먼저 실행
+                      updateTaskMutation.mutate(
+                        {
+                          taskKey: task.TASK_KEY,
+                          taskDetail: updatedTaskDetail,
+                        },
+                        {
+                          onSuccess: () => {
+                            // 그 다음 작업 상태 업데이트
+                            updateProgressingMutation.mutate(
+                              { taskKey: task.TASK_KEY, progressing: "완료" },
+                              {
+                                onSuccess: () => {
+                                  createLogMutation.mutate({
+                                    taskKey: task.TASK_KEY,
+                                    adminKey:
+                                      authAdminKey || task.ADMIN_KEY || "tk",
+                                    logContent: `${task.TASK_PROGRESSING} -> 완료`,
+                                  });
+                                  sendNotification(
+                                    "작업 상태 변경",
+                                    `[${task.TASK_TITLE}] 작업 완료 ✔`,
+                                    task.TASK_KEY
+                                  );
+                                  queryClient.invalidateQueries({
+                                    queryKey: ["tasks"],
+                                  });
+                                  queryClient.invalidateQueries({
+                                    queryKey: ["tasks-count"],
+                                  });
+                                  queryClient.invalidateQueries({
+                                    queryKey: ["task-detail", taskKey],
+                                  });
+                                },
+                                onError: () =>
+                                  Alert.alert(
+                                    "오류",
+                                    "작업 상태 업데이트 실패"
+                                  ),
+                              }
+                            );
+                          },
+                          onError: () =>
+                            Alert.alert("오류", "공정 상태 업데이트 실패"),
+                        }
+                      );
+                    },
                   },
-                  onError: () => Alert.alert("오류", "작업 상태 업데이트 실패"),
-                }
+                ]
               );
             }}
           >

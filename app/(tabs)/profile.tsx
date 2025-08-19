@@ -307,13 +307,13 @@ export default function ProfileScreen() {
               thumbColor={notificationsEnabled ? "#fff" : "#f4f3f4"}
             />
           </View>
-          {pushDebug ? (
+          {/* {pushDebug ? (
             <View style={{ marginTop: 8 }}>
               <Text style={{ color: "#666", fontSize: 12 }}>{pushDebug}</Text>
             </View>
-          ) : null}
+          ) : null} */}
 
-          {pushToken ? (
+          {/* {pushToken ? (
             <View style={{ marginTop: 8 }}>
               <Text style={{ color: "#333", fontSize: 12 }} numberOfLines={2}>
                 Token: {pushToken}
@@ -334,9 +334,9 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : null}
+          ) : null} */}
 
-          <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
+          {/* <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
             <TouchableOpacity
               onPress={handleTestNotification}
               style={{
@@ -350,7 +350,7 @@ export default function ProfileScreen() {
                 푸시 알림 테스트
               </Text>
             </TouchableOpacity>
-          </View>
+          </View> */}
         </View>
       </View>
 

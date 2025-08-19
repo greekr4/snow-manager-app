@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "snow-manager-app",
+    "name": "스노우 매니저",
     "slug": "snow-manager-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/ios/AppIcon~ios-marketing.png",
+    "icon": "./assets/images/android/play_store_512.png",
     "scheme": "snowmanagerapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
