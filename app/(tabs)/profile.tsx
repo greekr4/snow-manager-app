@@ -158,7 +158,7 @@ export default function ProfileScreen() {
       // 서버에 현재 사용자 푸시 설정 업데이트
       const adminKey = user?.adminKey || user?.id;
       if (adminKey) {
-        await axios.patch(`http://210.114.18.110:3333/users/${adminKey}`, {
+        await axios.patch(`https://snowplanet.co.kr/nest/users/${adminKey}`, {
           pushToken: value ? tokenToUse : null,
           pushEnabled: value,
         });
@@ -307,13 +307,13 @@ export default function ProfileScreen() {
               thumbColor={notificationsEnabled ? "#fff" : "#f4f3f4"}
             />
           </View>
-          {pushDebug ? (
+          {/* {pushDebug ? (
             <View style={{ marginTop: 8 }}>
               <Text style={{ color: "#666", fontSize: 12 }}>{pushDebug}</Text>
             </View>
-          ) : null}
+          ) : null} */}
 
-          {pushToken ? (
+          {/* {pushToken ? (
             <View style={{ marginTop: 8 }}>
               <Text style={{ color: "#333", fontSize: 12 }} numberOfLines={2}>
                 Token: {pushToken}
@@ -334,9 +334,9 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : null}
+          ) : null} */}
 
-          <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
+          {/* <View style={[styles.settingItem, { justifyContent: "flex-end" }]}>
             <TouchableOpacity
               onPress={handleTestNotification}
               style={{
@@ -350,7 +350,7 @@ export default function ProfileScreen() {
                 푸시 알림 테스트
               </Text>
             </TouchableOpacity>
-          </View>
+          </View> */}
         </View>
       </View>
 

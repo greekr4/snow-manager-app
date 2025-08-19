@@ -52,6 +52,40 @@ async function getExpoPushTokenSafe(): Promise<string | null> {
   }
 }
 
+// Axios 오류를 사람이 읽기 쉽게 포맷팅
+function formatAxiosError(error: any): string {
+  try {
+    const status = error?.response?.status;
+    const statusText = error?.response?.statusText;
+    const data = error?.response?.data;
+    const code = error?.code;
+    const url = error?.config?.url;
+    const method = error?.config?.method;
+
+    const lines: string[] = [];
+    if (code) lines.push(`code: ${code}`);
+    if (status)
+      lines.push(`status: ${status}${statusText ? ` (${statusText})` : ""}`);
+    if (method || url)
+      lines.push(
+        `request: ${(method || "").toString().toUpperCase()} ${
+          url || ""
+        }`.trim()
+      );
+    if (data !== undefined) {
+      const body =
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      lines.push(`response: ${body}`);
+    }
+    if (lines.length === 0) {
+      return String(error?.message || error);
+    }
+    return lines.join("\n");
+  } catch (e) {
+    return String(error?.message || error);
+  }
+}
+
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -99,7 +133,7 @@ export default function LoginScreen() {
       let adminKey: string | undefined;
       try {
         const res = await axios.get(
-          `http://210.114.18.110:3333/users/id/${email}`
+          `https://snowplanet.co.kr/nest/users/id/${email}`
         );
         const raw = res.data;
         const admin = Array.isArray(raw) ? raw[0] : raw;
@@ -159,7 +193,7 @@ export default function LoginScreen() {
         if (keyForPatch) {
           try {
             await axios.patch(
-              `http://210.114.18.110:3333/users/${keyForPatch}`,
+              `https://snowplanet.co.kr/nest/users/${keyForPatch}`,
               {
                 pushToken: pushToken ?? null,
                 pushEnabled: true,
@@ -175,7 +209,9 @@ export default function LoginScreen() {
         // 어떤 에러도 여기서 앱 종료 없이 흡수
       }
     } catch (error) {
-      Alert.alert("오류", `로그인에 실패했습니다. ${(error as any).message}`);
+      const detail = formatAxiosError(error);
+      console.error("[Login] 실패", error);
+      Alert.alert("오류", `로그인에 실패했습니다.\n\n${detail}`);
     }
   };
 

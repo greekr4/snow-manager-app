@@ -12,6 +12,7 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Modal,
   RefreshControl,
@@ -72,7 +73,7 @@ const fetchTasks = async ({
   status = "",
 }): Promise<PaginatedResponse> => {
   // 일시적으로 서버 필터링 비활성화 (서버에서 제대로 필터링이 안 되므로)
-  let url = `http://210.114.18.110:3333/tasks?page=${pageParam}&limit=10`;
+  let url = `https://snowplanet.co.kr/nest/tasks?page=${pageParam}&limit=10`;
 
   // TODO: 서버에서 필터링이 제대로 작동하면 아래 주석 해제
   // if (status && status !== "전체") {
@@ -85,7 +86,7 @@ const fetchTasks = async ({
 
 // 개수만 가져오는 API
 const fetchTaskCounts = async () => {
-  const response = await axios.get("http://210.114.18.110:3333/tasks/count");
+  const response = await axios.get("https://snowplanet.co.kr/nest/tasks/count");
   return response.data;
 };
 
@@ -202,6 +203,20 @@ export default function HomeScreen() {
       return [];
     }
   }, [allJobs, selectedTab]);
+
+  // 앱이 포그라운드로 복귀할 때 상세 refetch
+  React.useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refetch();
+      }
+    });
+    return () => {
+      try {
+        sub.remove();
+      } catch {}
+    };
+  }, [refetch]);
 
   // 탭 포커스시 데이터 리페치
   useFocusEffect(

@@ -15,6 +15,7 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 import { useAuth } from "@/stores/authStore";
 import { useTaskStore } from "@/stores/taskStore";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import axios from "axios";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -92,11 +93,44 @@ export default function RootLayout() {
   const { setSelectedTask } = useTaskStore();
   const isExpoGo = (Constants as any)?.appOwnership === "expo";
 
+  // cold-start 응답을 한 번만 처리하기 위한 ref
+  const didHandleColdStartRef = useRef(false);
+
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  // 전역 axios 설정(타임아웃/디버깅)
+  useEffect(() => {
+    axios.defaults.timeout = 15000;
+    const req = axios.interceptors.request.use((config) => {
+      return config;
+    });
+    const res = axios.interceptors.response.use(
+      (r) => r,
+      (error) => {
+        const isCanceled =
+          axios.isCancel?.(error) || error?.message === "canceled";
+        const status = error?.response?.status;
+        const url = error?.config?.url;
+        if (isCanceled) {
+          console.warn(`[HTTP] 요청 취소됨: ${url}`);
+        } else {
+          console.warn(
+            `[HTTP] 오류 ${status || ""}: ${url}`,
+            error?.response?.data || error?.message
+          );
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.request.eject(req);
+      axios.interceptors.response.eject(res);
+    };
+  }, []);
 
   // Android 알림 채널을 최대 중요도로 설정 (사운드/배너 보장)
   useEffect(() => {
@@ -163,12 +197,16 @@ export default function RootLayout() {
         }
       );
 
-      // cold start에서 마지막 응답 처리
+      // cold start에서 마지막 응답 처리 (한 번만)
       (async () => {
         try {
+          if (didHandleColdStartRef.current) return;
           const last = await Notifications.getLastNotificationResponseAsync();
           const data = last?.notification?.request?.content?.data;
-          if (data) navigateFromNotification(data, { coldStart: true });
+          if (data) {
+            didHandleColdStartRef.current = true;
+            navigateFromNotification(data, { coldStart: true });
+          }
         } catch (e) {
           // noop
         }
@@ -183,7 +221,7 @@ export default function RootLayout() {
         sub?.remove?.();
       } catch {}
     };
-  }, [router, setSelectedTask, isExpoGo, currentPathname]);
+  }, [router, setSelectedTask, isExpoGo]);
 
   if (!loaded) {
     return null;

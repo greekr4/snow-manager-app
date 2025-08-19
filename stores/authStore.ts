@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           // 사용자 조회 (아이디로 조회)
           const res = await axios.get(
-            `http://210.114.18.110:3333/users/${encodeURIComponent(email)}`
+            `https://snowplanet.co.kr/nest/users/${encodeURIComponent(email)}`
           );
           const raw = res.data;
           const data = Array.isArray(raw) ? raw[0] : raw;

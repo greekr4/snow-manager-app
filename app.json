@@ -1,20 +1,23 @@
 {
   "expo": {
-    "name": "snow-manager-app",
+    "name": "스노우 매니저",
     "slug": "snow-manager-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/android/play_store_512.png",
     "scheme": "snowmanagerapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/ios/AppIcon~ios-marketing.png"
     },
     "android": {
+      "icon": "./assets/images/android/play_store_512.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/android/play_store_512.png",
+        "backgroundColor": "#ffffff",
+        "monochromeImage": "./assets/images/android/play_store_512.png"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tkman.snowmanagerapp",
@@ -24,14 +27,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/web/favicon.ico"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/android/play_store_512.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
