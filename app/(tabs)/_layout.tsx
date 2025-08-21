@@ -75,7 +75,7 @@ export default function TabLayout() {
           tabBarLabelStyle: styles.tabBarLabel,
           tabBarLabelPosition: "below-icon",
           tabBarItemStyle: {
-            minWidth: 90,
+            minWidth: 50,
             alignItems: "center",
             justifyContent: "center",
           },
